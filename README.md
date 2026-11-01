@@ -24,46 +24,33 @@ Account lifecycle, access changes and new PNG imports require reviewed source
 policies. ServiceNow permissions still apply to every operation. See the
 [tool reference](CAPABILITIES.md) for tool names, prerequisites and limits.
 
-## Architecture
+## How it works
 
-The stdio interface provides record and administrative tools. The HTTP
-interface exposes only `search_incidents`, `get_incident`, `search_changes`
-and `get_change`.
+AI clients send tool requests to ServiceNow MCP, which calls the ServiceNow API.
 
 ```mermaid
-flowchart TD
-    Copilot["GitHub Copilot app<br/>Operations and theme skills"]
-    Clients["Other MCP clients"]
-    Cowork["Microsoft Copilot Cowork"]
-    Endpoint["Your HTTPS endpoint"]
-
-    subgraph Backend["ServiceNow MCP"]
-        Stdio["stdio<br/>Records and administration"]
-        HTTP["Streamable HTTP<br/>Read-only incident/change tools"]
-    end
-
-    ServiceNow["ServiceNow Table and Attachment APIs"]
-
-    Copilot --> Stdio
-    Clients --> Stdio
-    Cowork --> Endpoint --> HTTP
-    Stdio -->|"HTTPS"| ServiceNow
-    HTTP -->|"HTTPS GET"| ServiceNow
+flowchart LR
+    Copilot["GitHub Copilot"] --> MCP["ServiceNow MCP"]
+    Cowork["Copilot Cowork"] --> MCP
+    MCP --> ServiceNow["ServiceNow"]
 ```
 
-The [ServiceNow for Cowork](https://github.com/likamrat/servicenow-cowork-plugin)
-repository contains the Cowork client package and its incident/change skills.
-This repository owns the shared server.
+GitHub Copilot uses the stdio interface for records and administration.
+[ServiceNow for Cowork](https://github.com/likamrat/servicenow-cowork-plugin)
+uses the HTTP interface, which exposes only the four incident/change lookup
+tools. Both use the server in this repository.
 
 ## Get started
 
-For the **GitHub Copilot app**, use Node.js 24+, PowerShell 7 and a
-[credential-manager adapter](SETUP.md#credential-provider).
+In the **GitHub Copilot app**:
 
 1. Open **Add** > **Manage marketplaces** and register `https://github.com/likamrat/servicenow-mcp`.
 2. Open **Add** > **Plugin**.
 3. Enter `servicenow-mcp@servicenow-community`, then select **Install**.
 4. Follow [SETUP.md](SETUP.md#github-copilot-app) to configure the connection and make a read-only request.
+
+Marketplace installation adds the plugin; it does not configure ServiceNow
+access. Local-server requirements and connection setup are in [SETUP.md](SETUP.md).
 
 For other clients, use the [stdio setup](SETUP.md#other-mcp-clients).
 For Microsoft Copilot Cowork, use the [read-only HTTP setup](SETUP.md#cowork-read-only-server).
