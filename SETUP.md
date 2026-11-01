@@ -15,11 +15,11 @@ Additional source-policy requirements are listed in [CAPABILITIES.md](CAPABILITI
 The plugin requires an app that supports Agent Plugins 1.0 and stdio MCP,
 PowerShell 7, and a provider implementing the [credential interface](#credential-provider).
 
-1. In **Customize**, open the marketplace settings control and add
+1. Open **Add** > **Manage marketplaces** and register
    `https://github.com/likamrat/servicenow-mcp`.
-2. Install **servicenow-mcp** from **servicenow-community** and enable it in
-   **Installed**.
-3. Configure `connection.json` as described below, then start a fresh conversation.
+2. Open **Add** > **Plugin**.
+3. In **Name**, enter `servicenow-mcp@servicenow-community`, then select **Install**.
+4. Configure `connection.json` as described below, then start a fresh conversation.
 
 These are the app's documented
 [marketplace and plugin controls](https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app#adding-plugins).

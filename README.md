@@ -60,9 +60,10 @@ This repository owns the shared server.
 For the **GitHub Copilot app**, use Node.js 24+, PowerShell 7 and a
 [credential-manager adapter](SETUP.md#credential-provider).
 
-1. In **Customize**, open marketplace settings and add `https://github.com/likamrat/servicenow-mcp`.
-2. Install **servicenow-mcp** from **servicenow-community**.
-3. Follow [SETUP.md](SETUP.md#github-copilot-app) to configure the connection and make a read-only request.
+1. Open **Add** > **Manage marketplaces** and register `https://github.com/likamrat/servicenow-mcp`.
+2. Open **Add** > **Plugin**.
+3. Enter `servicenow-mcp@servicenow-community`, then select **Install**.
+4. Follow [SETUP.md](SETUP.md#github-copilot-app) to configure the connection and make a read-only request.
 
 For other clients, use the [stdio setup](SETUP.md#other-mcp-clients).
 For Microsoft Copilot Cowork, use the [read-only HTTP setup](SETUP.md#cowork-read-only-server).
