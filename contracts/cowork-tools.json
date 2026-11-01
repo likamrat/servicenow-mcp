@@ -1,0 +1,86 @@
+{
+  "tools": [
+    {
+      "name": "search_incidents",
+      "description": "Investigate reported workplace IT symptoms such as access failures, unavailable or slow applications, service outages, or remote connectivity trouble by finding related ServiceNow incidents, even when the user does not name ServiceNow or provide a ticket number. Query matches one literal substring of the incident title (short_description), not the full description or semantic meaning; use a short discriminating term or phrase. Optional number, state, priority, and assignee filters narrow results together. Read-only; up to 20 incidents updated within the last six months, with source links. Respect explicit source restrictions; ordinary document-finding without an IT problem does not call for this tool.",
+      "annotations": { "readOnlyHint": true, "title": "Search Incidents" },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Exact incident number"
+          },
+          "state": {
+            "type": "string",
+            "description": "Filter by state number: 1=New, 2=In Progress, 3=On Hold, 6=Resolved, 7=Closed"
+          },
+          "priority": {
+            "type": "string",
+            "description": "Filter by priority: 1 (Critical) through 5 (Planning)"
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "Filter by assignee display name (contains match)"
+          },
+          "query": {
+            "type": "string",
+            "description": "One literal substring of short_description (the title), not semantic or full-record search"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_incident",
+      "description": "Read a ServiceNow incident by a number supplied by the user or returned by search_incidents. Inspect whether a candidate matches a reported workplace IT problem and retrieve any recorded impact and workaround; a title match alone does not confirm the cause. Read-only; includes a source link and only incidents updated within the last six months. Respect explicit source restrictions.",
+      "annotations": { "readOnlyHint": true, "title": "Get Incident" },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Incident number"
+          }
+        },
+        "required": ["number"]
+      }
+    },
+    {
+      "name": "search_changes",
+      "description": "Read up to 20 ServiceNow change requests updated within the last six months, with source links.",
+      "annotations": { "readOnlyHint": true, "title": "Search Changes" },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "State number: -5=New, -4=Assess, -3=Authorize, -2=Scheduled, -1=Implement, 0=Review, 3=Closed"
+          },
+          "type": {
+            "type": "string",
+            "description": "normal, standard, or emergency"
+          },
+          "assignment_group": {
+            "type": "string",
+            "description": "Filter by assignment group name"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_change",
+      "description": "Read a change request by number with a source link. Only changes updated within the last six months are included.",
+      "annotations": { "readOnlyHint": true, "title": "Get Change Request" },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Change number"
+          }
+        },
+        "required": ["number"]
+      }
+    }
+  ]
+}

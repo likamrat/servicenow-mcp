@@ -1,0 +1,12 @@
+{
+  "name": "servicenow-community",
+  "owner": { "name": "Lior Kamrat" },
+  "plugins": [
+    {
+      "name": "servicenow-mcp",
+      "description": "ServiceNow records, guarded administration and portable operator skills.",
+      "version": "1.0.0",
+      "source": "./"
+    }
+  ]
+}

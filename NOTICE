@@ -1,0 +1,24 @@
+ServiceNow MCP
+
+The read-only server and Cowork tool contract derive from
+https://github.com/likamrat/servicenow-cowork-plugin
+at 0b6aa835259e505e34bf954682516c89d4ec2e44, itself a maintained adaptation of
+https://github.com/fizamusthafa/servicenow-cowork-plugin at 05c37c3.
+Both upstream copyright notices and the MIT permission notice are retained
+in LICENSE.
+
+The portable operator skills derive from the same maintained repository's
+local authored candidate 54bdb474f07841fa1ffc664ab83da5cfa257ff1a.
+
+The administrative adapters are maintained original operator code by
+Lior Kamrat and contributors, extracted without private runtime bindings,
+source snapshots or vendor implementation bodies. See PROVENANCE.md.
+
+ServiceNow, Microsoft and GitHub product names identify connected systems.
+This project is not an official product of those companies. No vendor logos,
+captured vendor implementation bodies, customer data or credentials are included.
+
+Third-party packages retain their own licenses. Dependencies are restored
+from the integrity-locked package-lock.json and are not vendored. Their
+copyright and license notices remain in the installed packages and are
+reproduced in THIRD_PARTY_NOTICES.txt.

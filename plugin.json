@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "servicenow-mcp",
+  "version": "1.0.0",
+  "description": "ServiceNow records, guarded administration and portable operator skills.",
+  "author": { "name": "Lior Kamrat" },
+  "repository": "https://github.com/likamrat/servicenow-mcp",
+  "license": "MIT"
+}
