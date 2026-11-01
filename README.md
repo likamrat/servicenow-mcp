@@ -1,155 +1,113 @@
 # ServiceNow MCP
 
-Version **1.0.0**. A local ServiceNow MCP implementation with native GitHub
-Copilot plugin packaging and a separate, restricted Cowork interface.
+ServiceNow MCP connects AI assistants to ServiceNow for incident and knowledge
+management, account administration, and draft theme changes. It includes a
+GitHub Copilot app plugin, two operator skills, and a separate read-only HTTP
+interface for Microsoft Copilot Cowork.
 
-The native plugin includes record schema discovery and CRUD, exact user reads,
-guarded administrative deletion, draft colors and existing PNG-logo bindings.
-User lifecycle and new PNG imports additionally require operator-reviewed
-source contracts. Managed nonprivileged groups/roles/assignments similarly
-require reviewed account/access contracts. This is **not** a claim of all native
-administrative tools or compatibility with every ServiceNow release.
-See [capabilities](CAPABILITIES.md).
+## Included skills
 
-## GitHub Copilot app
+- [Operations](skills/servicenow-operations/SKILL.md): work with records, users, groups and roles.
+- [Themes](skills/servicenow-themes/SKILL.md): plan and perform reversible color and logo changes.
 
-Requires Node.js 24+, PowerShell7, an approved protected-credential provider,
-and a GitHub Copilot app supporting Agent Plugins1.0 and stdio MCP. The adapter
-does not download packages, enroll credentials, launch a browser or expose an
-HTTP listener. The JavaScript backend uses only Node built-ins.
+## MCP tools
 
-The native entrypoint reads an operator-approved, **nonsecret**
-`connection.json` from the host-provided `PLUGIN_DATA` directory. Missing
-configuration fails with that exact file path. Its closed format is:
+| Area | Operations |
+|---|---|
+| Records | Discover schemas; query, read, create, update and delete incidents, knowledge bases and articles. |
+| Users | Read profiles, create disabled accounts, update profiles, activate, lock, unlock, and assess or delete users. |
+| Access | Create managed nonprivileged groups and roles; update descriptions and direct assignments. |
+| Themes | Edit and restore draft primary colors and corner radius; import, apply and remove PNG-logo links. |
+| Incident and change lookup | Search recent incidents and changes, or read a ticket by number. |
 
-```json
-{
-  "format": 1,
-  "instance": "https://servicenow.example.invalid",
-  "powershell_path": "<absolute approved pwsh executable path>",
-  "powershell_sha256": "<approved executable SHA256>",
-  "provider_module": "<absolute approved credential-provider .psm1 path>",
-  "provider_sha256": "<approved provider SHA256>",
-  "provider_getter": "Get-ServiceNowStoredCredential",
-  "state_directory": "<absolute private directory outside the package and PLUGIN_DATA>"
-}
+Account lifecycle, access changes and new PNG imports require reviewed source
+policies. ServiceNow permissions still apply to every operation. See the
+[tool reference](CAPABILITIES.md) for tool names, prerequisites and limits.
+
+## Architecture
+
+The stdio interface provides record and administrative tools. The HTTP
+interface exposes only `search_incidents`, `get_incident`, `search_changes`
+and `get_change`.
+
+```mermaid
+flowchart TD
+    Copilot["GitHub Copilot app<br/>Operations and theme skills"]
+    Clients["Other MCP clients"]
+    Cowork["Microsoft Copilot Cowork"]
+    Endpoint["Your HTTPS endpoint"]
+
+    subgraph Backend["ServiceNow MCP"]
+        Stdio["stdio<br/>Records and administration"]
+        HTTP["Streamable HTTP<br/>Read-only incident/change tools"]
+    end
+
+    ServiceNow["ServiceNow Table and Attachment APIs"]
+
+    Copilot --> Stdio
+    Clients --> Stdio
+    Cowork --> Endpoint --> HTTP
+    Stdio -->|"HTTPS"| ServiceNow
+    HTTP -->|"HTTPS GET"| ServiceNow
 ```
 
-The provider must export the fixed `Get-ServiceNowStoredCredential` function
-and return `Instance`, `UserNameSecure` and `PasswordSecure`, with both values
-as PowerShell `SecureString` objects. It must use an existing approved store;
-no provider or stored credentials are bundled. The instance must match the
-binding. This interface is not an arbitrary command or model-controlled tool.
-Review the provider and executable identities before provisioning the binding;
-hash changes fail closed rather than being accepted automatically.
+The [ServiceNow for Cowork](https://github.com/likamrat/servicenow-cowork-plugin)
+repository contains the Cowork client package and its incident/change skills.
+This repository owns the shared server.
 
-The fixed adapter invokes the pinned provider, passes its values only in the
-child Node process environment, then clears/disposes them. Credentials never
-enter arguments, a JSON file or stdout. Raw provider errors are replaced with
-bounded failure codes. It does not depend on inherited source variables.
-On Windows it resolves the provider's LocalAppData location through the OS,
-not through a guessed user path. The current protected demo provider is
-Windows-specific; another platform needs an approved provider implementing
-the same interface, not copied machine-bound store files.
+## Get started
 
-**Actual desktop installation remains unverified.** Source-level synthetic
-provider/stdio checks do not prove app installation, plugin-origin skill
-selection or a real source call. The native app's marketplace/install action
-and provisioning its actual `PLUGIN_DATA` binding require operator approval.
+For the **GitHub Copilot app**, use Node.js 24+, PowerShell 7 and a
+[credential-manager adapter](SETUP.md#credential-provider).
 
-For a standalone backend launch, these explicit process environment entries
-are the underlying interface; the native adapter supplies them privately:
+1. In **Customize**, open marketplace settings and add `https://github.com/likamrat/servicenow-mcp`.
+2. Install **servicenow-mcp** from **servicenow-community**.
+3. Follow [SETUP.md](SETUP.md#github-copilot-app) to configure the connection and make a read-only request.
 
-| Variable | Value |
-|---|---|
-| `SERVICENOW_INSTANCE` | Your HTTPS instance origin, without credentials or a path |
-| `SERVICENOW_USERNAME` | Authorized source account |
-| `SERVICENOW_PASSWORD` | Account secret; never put it in chat or plugin files |
-| `SERVICENOW_MCP_DATA_DIR` | Absolute private state directory outside the checkout |
+For other clients, use the [stdio setup](SETUP.md#other-mcp-clients).
+For Microsoft Copilot Cowork, use the [read-only HTTP setup](SETUP.md#cowork-read-only-server).
 
-Use a source account with the least privileges needed for the intended actions.
-The adapter does not grant source permissions or bypass ACLs. The operating
-system must restrict the state directory to its operator; file modes alone
-do not establish Windows ACL protection.
+**HTTP access:** the read-only server has no client authentication. Anyone who
+can reach it can read through its configured ServiceNow account. Keep it on
+loopback unless external access is deliberately restricted. Incident/change
+searches return up to 20 records updated within the last six months; incident
+search matches literal title text.
 
-Once private configuration is supported and installation is approved, open
-**Customize**, use the marketplace settings control beside the
-marketplace dropdown, and add this repository's Git URL. Find
-`servicenow-mcp` in `servicenow-community`, select **Install**, then confirm it
-is enabled in **Installed**. The selected revision must contain root
-`plugin.json`, `mcp.json`, `skills/` and `.github/plugin/marketplace.json`.
-See [GitHub's app customization guide](https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app).
+## Agent installation prompt
 
-The app starts `node` with `src/plugin.cjs`; its fixed PowerShell adapter starts
-`src/stdio.cjs`. Missing binding or unavailable/pin-mismatched prerequisites fail
-explicitly. Do not copy secrets into `mcp.json` or `connection.json`.
-No install hook changes global configuration or starts another service.
+Paste into your coding agent from this checkout:
 
-Verify in a fresh conversation that `servicenow-portable` is the actual tool
-registration and that skill-load events identify this plugin's paths. Existing
-same-name personal or repository skills can shadow the packaged skills. A
-parser check, `tools/list`, or a personal-skill invocation is not desktop
-installation or source-operation proof. Do not disable other registrations
-without their owner's approval.
+```text
+Follow SETUP.md to connect ServiceNow MCP to my chosen client.
+Check the prerequisites and use my existing credential setup; do not enroll
+credentials or put secrets in repository files or command arguments.
+For the GitHub Copilot app, configure the documented nonsecret provider binding.
+Keep the Cowork HTTP interface read-only and explain its access restrictions.
+Ask before installation, access changes or ServiceNow writes.
+Verify the connection with a read-only request from the chosen client.
+Report missing prerequisites and connection errors. Do not push or publish.
+```
 
-## Cowork read-only process
+## Development
 
-The separate Cowork package lives in
-[likamrat/servicenow-cowork-plugin](https://github.com/likamrat/servicenow-cowork-plugin).
-Its versioned tool description consumes `contracts/cowork-tools.json`.
-`src/server.js` serves exactly those four tools, never the administrative
-registry.
+With Node.js 24+ and PowerShell 7:
 
-Run `npm ci --ignore-scripts` in this checkout, supply the three source
-environment variables above, and run `npm start`. The default endpoint is
-`http://127.0.0.1:3002/mcp`; `PORT` can select another port. The process stays
-attached to the terminal. It does not read `.env` files.
+```sh
+npm ci --ignore-scripts
+npm run check
+npm test
+npm run notices:check
+```
 
-The HTTP interface implements Streamable HTTP initialization and JSON tool
-responses, not legacy SSE. Searches select at most20 records updated in the
-last six months. Incident query text is a literal title substring. Empty
-results are distinct from source errors and do not prove instance-wide absence.
+The tests use synthetic sources; no ServiceNow credentials are needed.
 
-There is **no inbound HTTP authentication** in this restricted process.
-Keep it on loopback. `MCP_ALLOWED_HOSTS` (exact hostnames without ports) and
-`MCP_ALLOWED_ORIGINS` (exact HTTP(S) origins) are request checks, not
-authentication. Any external relay requires separate exposure authorization
-and access-control review. Never relay an administrative endpoint. This
-repository neither creates a tunnel nor deploys cloud infrastructure.
+## Credits and license
 
-## Private state and recovery
+The read-only adapter builds on
+[ServiceNow for Cowork](https://github.com/likamrat/servicenow-cowork-plugin),
+originally created by [fizamusthafa](https://github.com/fizamusthafa/servicenow-cowork-plugin).
+Maintained by Lior Kamrat.
 
-The stdio tools create an instance/principal-bound journal and guarded recovery
-snapshots under `SERVICENOW_MCP_DATA_DIR`. They serialize operations across
-processes sharing that directory and retain attempted UUIDs across restart.
-They do not lock other tools or source writers. Use a distinct fresh
-directory for another instance or account; the adapter refuses to adopt an
-existing unbound journal. Do not reset or migrate another installation's state.
-
-Optional `retained-user-ids.json` is a private JSON array of exact user IDs.
-Existing holds are read on every operation; the current operator and observed
-cascades into protected users remain protected even when the array is empty.
-Do not remove holds merely to make deletion pass.
-
-After an uncertain write, preserve the original operation ID and inspect
-`local_operation_status` plus exact source reads. A new UUID is not replay
-permission. Paired-style restoration uses the original snapshot and current
-guards. Source version checks are preflight checks, **not atomic CAS**.
-
-An interrupted process may leave `operation.lock`. Stop and establish the
-owning process and its last source effects before any manual lock removal.
-Do not delete journals or snapshots to repair a lock. Disabling/uninstalling
-the plugin does not undo ServiceNow effects. The host may remove `PLUGIN_DATA`
-on uninstall, so operation state is required outside that directory. Preserve
-the nonsecret binding separately when needed; never delete private state to
-make a fresh installation bypass an unresolved operation.
-
-## Development and licensing
-
-`npm run check` checks JavaScript syntax; `npm test` exercises the production
-interfaces against synthetic sources. No tests require a real instance.
-`npm run notices:check` verifies the dependency notices after `npm ci`.
-
-Original project code is MIT. Upstream attribution is in [NOTICE](NOTICE);
-source and dependency provenance is in [PROVENANCE.md](PROVENANCE.md).
-Dependencies retain their own licenses, including ISC and BSD-3-Clause.
+MIT; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+[Source provenance](PROVENANCE.md) and
+[third-party licenses](THIRD_PARTY_NOTICES.txt) are documented separately.

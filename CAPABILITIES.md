@@ -1,17 +1,16 @@
-# Capability boundaries
+# Tool reference
 
-All writes require actual user/host authorization and effective source
-permissions. Confirmation fields, successful assessment and tool availability
-are not consent. The two operator skills describe workflow semantics; they
-do not install missing source capabilities.
+Tools use the configured ServiceNow account and remain subject to its permissions.
+Write operations require authorization for the intended change; a confirmation
+field or successful assessment does not grant source permissions.
 
-| Operation | Portable interface | Prerequisite and limit |
+| Operation | Interface | Prerequisite and limit |
 |---|---|---|
-| Incident/change reads | `search_incidents`, `get_incident`, `search_changes`, `get_change` | Six-month window; search limit20; explicit projected fields and source links |
-| Business records, including incidents, KBs and articles | `local_record_schema/query/get/create/update/delete` | Live inherited dictionary/choice/data-policy reads; source ACLs and lifecycle rules govern writes. Account, credential, access and executable configuration are excluded, including inherited protected tables |
+| Incident/change reads | `search_incidents`, `get_incident`, `search_changes`, `get_change` | Six-month window; search limit 20; explicit projected fields and source links |
+| Business records, including incidents, KBs and articles | `local_record_schema`, `local_record_query`, `local_record_get`, `local_record_create`, `local_record_update`, `local_record_delete` | Live inherited dictionary/choice/data-policy reads; source ACLs and lifecycle rules govern writes. Account, credential, access and executable configuration are excluded, including inherited protected tables |
 | Exact user read | `local_admin_user_get` | Minimal profile/status projection; not credential or bulk-user export |
-| Administrative deletion | `local_admin_user_delete_assess`, `local_admin_user_delete_administrative` | Fresh operator/target/rule/relationship assessment, exact target version and impact hash, explicit native-effect acknowledgments. No fixture, disabled-account or empty-contact prerequisite. Observed parent absence is separate from known related outcomes; `cleanup_complete` stays false |
-| Disabled-user creation, profile, activation, deactivation/lock, lock, unlock | `local_admin_user_assess`, `local_admin_user_create_disabled`, `local_admin_user_update_profile`, `local_admin_user_activate`, `local_admin_user_deactivate_and_lock`, `local_admin_user_lock`, `local_admin_user_unlock` | Requires a matching privately reviewed account contract. Existing bounded local-human, protected-identity, relationship and native-effect guards remain |
+| Administrative deletion | `local_admin_user_delete_assess`, `local_admin_user_delete_administrative` | Current target version, impact hash and native-effect acknowledgments. Protects the operator and retained users. Does not require an inactive account or blank contact fields. Parent absence and related outcomes are reported separately; `cleanup_complete` stays false |
+| Disabled-user creation, profile, activation, deactivation/lock, lock, unlock | `local_admin_user_assess`, `local_admin_user_create_disabled`, `local_admin_user_update_profile`, `local_admin_user_activate`, `local_admin_user_deactivate_and_lock`, `local_admin_user_lock`, `local_admin_user_unlock` | Requires a reviewed account contract; limited to eligible local human accounts, with protected-identity, relationship and native-effect guards |
 | Managed nonprivileged groups, roles and direct assignments | `local_admin_access_read`, group/role create and description-update tools, group deletion, direct user-role/group-member/group-role add/remove, role deletion assessment | Requires account/access contracts and per-definition ownership receipts created by this installation. Namespaced nonprivileged scope, disabled/locked local-user guards and native inherited-role readback remain. Role-definition deletion is not registered |
 | Login illustration setting | `local_admin_set_branding_property` | Only the existing documented `glide.ui.polaris.login.show_illustrations` string property |
 | Draft colors/radius | `local_admin_patch_theme_style_pair`, `local_admin_restore_theme_style_pair` | Current-principal-owned global unpublished draft, two exclusive core styles, raw hashes/versions and exact original values. Two writes are not atomic; complete originals and partial outcomes are retained |
@@ -23,16 +22,15 @@ not zero. Ordered pagination continues beyond one hundred related records.
 Unreadable or inconsistent evidence blocks assessment. Known relationships
 are not a complete hidden/dynamic cascade graph or proof of session revocation.
 
-## Source contracts, not installation history
+## Source-policy configuration
 
-The account and image tools are advertised with an explicit prerequisite.
-Without that prerequisite they return a capability-not-ready error before a
-source mutation. No historic approval, trial account, fixture ID, credential
-store or captured vendor body is distributed.
+Account lifecycle, managed access and PNG imports compare installed source
+rules or schemas with operator-reviewed policy files. Missing or changed policy
+blocks the relevant write. This is the adapter's safeguard, not a universal
+ServiceNow installation requirement.
 
-These are this implementation's private review requirements, not universal
-ServiceNow installation restrictions. They are trusted operator inputs, not
-model-supplied tool arguments:
+Store these files in the private operation-state directory. They are operator
+configuration, not model-supplied tool arguments:
 
 * `account-contract.json`: `format: 2`, the exact `instance`,
   `sourceEvidenceSha256`, `protectedIds`, `protectedNames`, and
@@ -56,14 +54,15 @@ model-supplied tool arguments:
   `sys_user_role`, `sys_user_has_role`, `sys_group_has_role`,
   `sys_user_role_contains`, and `sys_user_grmember`. Writes recheck every
   table's complete bounded hook/dictionary coverage. This complements rather
-  than replaces the account contract. Existing-definition adoption requires a
-  separately trusted current-target authorization interface and is not supplied
-  by copying an old managed receipt.
+  than replaces the account contract. Access tools manage definitions created
+  by this installation; importing another installation's ownership receipts is
+  not a supported adoption mechanism.
 
-Do not generate these files by accepting whatever discovery returns. Source
-drift requires review, not automatic rebasing of fingerprints. A missing
-reviewed contract is a real readiness gap, not an instruction to relax guards.
-The package provides no universal release contract or automatic enrollment.
+Review the relevant source behavior before recording a policy. Discovery alone
+is not qualification, and changed fingerprints require review rather than
+automatic replacement.
+
+## PNG staging
 
 For an authorized PNG, run the following locally in the configured environment:
 
@@ -73,20 +72,16 @@ node scripts/stage-logo.cjs <absolute-PNG-path> <expected-SHA256> <filename.png>
 
 Use the returned immutable staging ID/hash with the import tool. Staging
 does not upload. Supported PNGs are static, noninterlaced, 8-bit RGB/RGBA,
-at most400x50 pixels and strictly under120000 bytes. It is not a generic
+at most 400 x 50 pixels and strictly under 120,000 bytes. It is not a generic
 attachment uploader. Visible logo/color effects require separate observation
 in the intended user experience.
 
-## Not yet provided by this portable package
+## Scope
 
-Existing-definition adoption, native password operations, new SVG/JPEG
-imports, portal branding, and theme publication/default/unpublication are not silently
-substituted with generic Table API writes. Their earlier native implementations
-need separate portable reviewed contracts; password/native theme paths also
-need an approved browser/session interface, and password handles need a
-protected-secret provider. No vendor implementation snapshot can substitute
-for those contracts.
+The server does not expose existing-definition adoption, role-definition
+deletion, password changes, SVG/JPEG import, portal branding, theme creation,
+publication or default/user-theme selection. Fonts, custom icons and typography
+are also outside its tool set.
 
-Theme creation and user-specific selection remain supported-platform UI
-operations, not claims made by a draft-style patch. Fonts, custom icons and
-typography are outside this delivery. No cloud hosting is included.
+Use the appropriate ServiceNow interface for those operations. Generic record
+tools are not a substitute for unsupported account or configuration actions.
