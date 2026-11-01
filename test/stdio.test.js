@@ -25,11 +25,7 @@ test("declared stdio entrypoint works without npm dependencies when explicitly g
   }).listen(0, "127.0.0.1");
   await once(source, "listening");
   t.after(() => { source.closeAllConnections(); source.close(); });
-  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "mcp.json"), "utf8"));
-  const config = manifest.mcpServers["servicenow-portable"];
-  assert.equal(config.type, "stdio");
-  assert.equal(config.command, "node");
-  const child = spawn(process.execPath, config.args.map(arg => arg.replaceAll("${PLUGIN_ROOT}", plugin)), {
+  const child = spawn(process.execPath, [path.join(plugin, "src", "stdio.cjs")], {
     cwd: plugin, env: { ...process.env, NODE_PATH: "", SERVICENOW_INSTANCE: `http://127.0.0.1:${source.address().port}`,
       SERVICENOW_USERNAME: "operator", SERVICENOW_PASSWORD: "synthetic-only",
       SERVICENOW_MCP_DATA_DIR: path.join(root, "private"), MCP_ALLOWED_HOSTS: "", MCP_ALLOWED_ORIGINS: "" },

@@ -4,7 +4,7 @@
     "servicenow-portable": {
       "type": "stdio",
       "command": "node",
-      "args": ["${PLUGIN_ROOT}/src/stdio.cjs"]
+      "args": ["${PLUGIN_ROOT}/src/plugin.cjs"]
     }
   }
 }

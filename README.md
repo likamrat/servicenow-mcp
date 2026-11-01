@@ -13,11 +13,52 @@ See [capabilities](CAPABILITIES.md).
 
 ## GitHub Copilot app
 
-Requires Node.js 24+ and a GitHub Copilot app supporting Agent Plugins 1.0 and
-stdio MCP. The plugin's production stdio path uses only Node built-ins; it
-does not download packages, launch a browser or expose an HTTP listener.
+Requires Node.js 24+, PowerShell7, an approved protected-credential provider,
+and a GitHub Copilot app supporting Agent Plugins1.0 and stdio MCP. The adapter
+does not download packages, enroll credentials, launch a browser or expose an
+HTTP listener. The JavaScript backend uses only Node built-ins.
 
-The stdio process requires these explicit environment entries:
+The native entrypoint reads an operator-approved, **nonsecret**
+`connection.json` from the host-provided `PLUGIN_DATA` directory. Missing
+configuration fails with that exact file path. Its closed format is:
+
+```json
+{
+  "format": 1,
+  "instance": "https://servicenow.example.invalid",
+  "powershell_path": "<absolute approved pwsh executable path>",
+  "powershell_sha256": "<approved executable SHA256>",
+  "provider_module": "<absolute approved credential-provider .psm1 path>",
+  "provider_sha256": "<approved provider SHA256>",
+  "provider_getter": "Get-ServiceNowStoredCredential",
+  "state_directory": "<absolute private directory outside the package and PLUGIN_DATA>"
+}
+```
+
+The provider must export the fixed `Get-ServiceNowStoredCredential` function
+and return `Instance`, `UserNameSecure` and `PasswordSecure`, with both values
+as PowerShell `SecureString` objects. It must use an existing approved store;
+no provider or stored credentials are bundled. The instance must match the
+binding. This interface is not an arbitrary command or model-controlled tool.
+Review the provider and executable identities before provisioning the binding;
+hash changes fail closed rather than being accepted automatically.
+
+The fixed adapter invokes the pinned provider, passes its values only in the
+child Node process environment, then clears/disposes them. Credentials never
+enter arguments, a JSON file or stdout. Raw provider errors are replaced with
+bounded failure codes. It does not depend on inherited source variables.
+On Windows it resolves the provider's LocalAppData location through the OS,
+not through a guessed user path. The current protected demo provider is
+Windows-specific; another platform needs an approved provider implementing
+the same interface, not copied machine-bound store files.
+
+**Actual desktop installation remains unverified.** Source-level synthetic
+provider/stdio checks do not prove app installation, plugin-origin skill
+selection or a real source call. The native app's marketplace/install action
+and provisioning its actual `PLUGIN_DATA` binding require operator approval.
+
+For a standalone backend launch, these explicit process environment entries
+are the underlying interface; the native adapter supplies them privately:
 
 | Variable | Value |
 |---|---|
@@ -25,17 +66,6 @@ The stdio process requires these explicit environment entries:
 | `SERVICENOW_USERNAME` | Authorized source account |
 | `SERVICENOW_PASSWORD` | Account secret; never put it in chat or plugin files |
 | `SERVICENOW_MCP_DATA_DIR` | Absolute private state directory outside the checkout |
-
-**Desktop configuration is not yet qualified.** The supported method for
-supplying private per-plugin values in GitHub Copilot desktop1.1.34 still needs
-host confirmation. Agent Plugins 1.0 guarantees only `PLUGIN_ROOT` and
-`PLUGIN_DATA` expansion; do not assume arbitrary operating-system environment
-variables reach the plugin. Section9.1 requires other variables to be supplied
-explicitly in server configuration; package `env` values cannot contain secrets.
-The current native manifest is therefore provisional, not a completed conformant
-desktop configuration. A successful direct stdio launch is not desktop proof.
-Do not install expecting source access until a supported private configuration
-path is established.
 
 Use a source account with the least privileges needed for the intended actions.
 The adapter does not grant source permissions or bypass ACLs. The operating
@@ -50,8 +80,9 @@ is enabled in **Installed**. The selected revision must contain root
 `plugin.json`, `mcp.json`, `skills/` and `.github/plugin/marketplace.json`.
 See [GitHub's app customization guide](https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app).
 
-The app starts `node` with the packaged `src/stdio.cjs`. Missing environment or
-an unavailable executable fails explicitly. Do not copy secrets into `mcp.json`.
+The app starts `node` with `src/plugin.cjs`; its fixed PowerShell adapter starts
+`src/stdio.cjs`. Missing binding or unavailable/pin-mismatched prerequisites fail
+explicitly. Do not copy secrets into `mcp.json` or `connection.json`.
 No install hook changes global configuration or starts another service.
 
 Verify in a fresh conversation that `servicenow-portable` is the actual tool
@@ -108,7 +139,10 @@ guards. Source version checks are preflight checks, **not atomic CAS**.
 An interrupted process may leave `operation.lock`. Stop and establish the
 owning process and its last source effects before any manual lock removal.
 Do not delete journals or snapshots to repair a lock. Disabling/uninstalling
-the plugin does not erase private state or undo ServiceNow effects.
+the plugin does not undo ServiceNow effects. The host may remove `PLUGIN_DATA`
+on uninstall, so operation state is required outside that directory. Preserve
+the nonsecret binding separately when needed; never delete private state to
+make a fresh installation bypass an unresolved operation.
 
 ## Development and licensing
 

@@ -38,10 +38,16 @@ to redistribute the material a reviewer consulted.
 
 ## Runtime closure
 
-The native stdio path consists of `src/stdio.cjs`, `src/configuration.cjs`,
+The native bootstrap is `src/plugin.cjs` and the fixed
+`scripts/start-stdio.ps1` adapter. It requires a separately approved PowerShell
+executable and protected provider, pinned by private nonsecret configuration.
+Neither binary nor provider/store is distributed, and no secret store is
+implemented by this package.
+
+The backend stdio path consists of `src/stdio.cjs`, `src/configuration.cjs`,
 `src/server.js`, `src/admin/`, and `contracts/cowork-tools.json`, using Node
 built-ins. No browser, operating-system credential module, database or
-private session directory is required to load it.
+private session directory is required by the backend.
 
 The optional read-only HTTP entrypoint additionally uses Express. Exact
 versions, package registry URLs and integrity digests are retained in
@@ -49,5 +55,5 @@ versions, package registry URLs and integrity digests are retained in
 texts from the installed locked dependency closure, grouped only when the
 texts are byte-identical. MIT, ISC and BSD-3-Clause remain distinct licenses.
 Dependencies are not vendored in this repository; retain their notices if
-redistributing a built package that includes them. Node.js is a separately
-installed runtime with its own license/notices.
+redistributing a built package that includes them. Node.js and PowerShell are
+separately installed runtimes with their own licenses/notices.
