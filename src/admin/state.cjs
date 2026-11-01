@@ -43,16 +43,23 @@ function createState({ directory, instance, username }) {
       fs.fsyncSync(fd);
       const identity = path.join(directory, "binding.json");
       if (!fs.existsSync(identity)) {
-        const freshFiles = ["operation.lock", "account-contract.json", "image-contract.json", "access-contract.json", "retained-user-ids.json"];
+        const freshFiles = ["operation.lock", "account-contract.json", "image-contract.json", "access-contract.json",
+          "cowork-profile.json", "retained-user-ids.json"];
         if (fs.readdirSync(directory).some(file => !freshFiles.includes(file)))
           throw new Error("Unbound nonempty state directory; do not adopt or reset existing state.");
         const file = fs.openSync(identity, "wx", 0o600);
         try { fs.writeSync(file, JSON.stringify(binding)); fs.fsyncSync(file); } finally { fs.closeSync(file); }
       }
-      const saved = JSON.parse(fs.readFileSync(identity, "utf8"));
+      let saved;
+      try { saved = JSON.parse(fs.readFileSync(identity, "utf8")); }
+      catch { throw new Error("Private state binding is invalid; preserve it for operator recovery."); }
       if (saved.format !== binding.format || saved.instance !== instance || saved.principal !== username)
         throw new Error("Private state belongs to another instance or principal.");
-      entries = fs.existsSync(journal) ? fs.readFileSync(journal, "utf8").split("\n").filter(Boolean).map(JSON.parse) : [];
+      try { entries = fs.existsSync(journal) ? fs.readFileSync(journal, "utf8").split("\n").filter(Boolean).map(JSON.parse) : []; }
+      catch { throw new Error("Private operation journal is invalid; preserve it for operator recovery."); }
+      if (entries.some(entry => !entry || typeof entry !== "object" || Array.isArray(entry) ||
+          typeof entry.operation_id !== "string" || typeof entry.status !== "string"))
+        throw new Error("Private operation journal contains an invalid entry; no operation dispatched.");
       return await action();
     } finally {
       fs.closeSync(fd);
@@ -68,7 +75,7 @@ function createState({ directory, instance, username }) {
   }
   function unresolved(table, id) {
     const candidates = entries.filter(row => row.status === "attempt" && row.table === table &&
-      (id ? row.sys_id === id : !row.sys_id));
+      (id ? entries.some(entry => entry.operation_id === row.operation_id && entry.sys_id === id) : !row.sys_id));
     return candidates.some(row => {
       const last = entries.filter(entry => entry.operation_id === row.operation_id).at(-1);
       return !["confirmed", "rejected_source_acl", "no_change"].includes(last.status);
@@ -99,7 +106,7 @@ function createState({ directory, instance, username }) {
     return { operation_id: id, entries: entries.filter(row => row.operation_id === id), receipts };
   }
   return { directory, run, record: append, claim, isAttempted: attempted, retainedIds, unresolved, pendingTheme,
-    status };
+    status, events: id => structuredClone(entries.filter(row => row.operation_id === id)) };
 }
 
 module.exports = { createState };

@@ -48,21 +48,27 @@ function loadBinding(dataDirectory) {
       inside(path.resolve(__dirname, ".."), path.resolve(binding.state_directory)) ||
       inside(directory, path.resolve(binding.state_directory)))
     throw new Error("Operation state must remain outside both the plugin package and its uninstallable PLUGIN_DATA directory.");
-  return { file, powershell, hash: crypto.createHash("sha256").update(bytes).digest("hex") };
+  return { file, powershell, hash: crypto.createHash("sha256").update(bytes).digest("hex"),
+    instance: binding.instance, stateDirectory: binding.state_directory };
 }
-function main() {
-  const binding = loadBinding(process.env.PLUGIN_DATA);
+function launchProtected(binding, mode) {
+  const entrypoints = { stdio: "stdio.cjs", cowork: "cowork-server.cjs" };
+  if (!Object.hasOwn(entrypoints, mode)) throw new Error("Unsupported protected server entrypoint.");
   // PowerShell needs .EXE recognition even when native command paths are absolute.
   const child = spawn(binding.powershell, [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-File", path.join(__dirname, "..", "scripts", "start-stdio.ps1"),
     "-BindingPath", binding.file, "-BindingSHA256", binding.hash,
-    "-NodePath", process.execPath, "-ServerPath", path.join(__dirname, "stdio.cjs"),
+    "-NodePath", process.execPath, "-ServerPath", path.join(__dirname, entrypoints[mode]),
   ], { env: process.platform === "win32" ? { PATHEXT: ".EXE" } : {}, stdio: "inherit", windowsHide: true });
   child.on("error", () => { process.stderr.write("Unable to start the approved PowerShell adapter.\n"); process.exitCode = 1; });
   child.on("exit", code => { process.exitCode = code ?? 1; });
   for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => child.kill(signal));
+  return child;
+}
+function main() {
+  launchProtected(loadBinding(process.env.PLUGIN_DATA), "stdio");
 }
 if (require.main === module) {
   try { main(); } catch (error) { process.stderr.write(error.message + "\n"); process.exitCode = 1; }
 }
-module.exports = { loadBinding };
+module.exports = { loadBinding, launchProtected };

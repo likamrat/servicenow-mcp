@@ -2,8 +2,8 @@
 
 ServiceNow MCP connects AI assistants to ServiceNow for incident and knowledge
 management, account administration, and draft theme changes. It includes a
-GitHub Copilot app plugin, two operator skills, and a separate read-only HTTP
-interface for Microsoft Copilot Cowork.
+GitHub Copilot app plugin, two operator skills, and an authenticated HTTP
+interface for Microsoft Copilot Cowork over the same backend.
 
 ## Included skills
 
@@ -19,6 +19,7 @@ interface for Microsoft Copilot Cowork.
 | Access | Create managed nonprivileged groups and roles; update descriptions and direct assignments. |
 | Themes | Edit and restore draft primary colors and corner radius; import, apply and remove PNG-logo links. |
 | Incident and change lookup | Search recent incidents and changes, or read a ticket by number. |
+| Cowork incident management | Create, update and delete incidents; resolve exact assignees and assign, reassign or clear ownership. |
 
 Account lifecycle, access changes and new PNG imports require reviewed source
 policies. ServiceNow permissions still apply to every operation. See the
@@ -37,8 +38,10 @@ flowchart LR
 
 GitHub Copilot uses the stdio interface for records and administration.
 [ServiceNow for Cowork](https://github.com/likamrat/servicenow-cowork-plugin)
-uses the HTTP interface, which exposes only the four incident/change lookup
-tools. Both use the server in this repository.
+uses a restricted authenticated HTTP interface: four incident/change lookup
+tools and six incident schema, identity, CRUD and operation-status tools.
+Both clients use the same record guards and private operation journal; Cowork
+does not expose account, access or theme administration.
 
 ## Get started
 
@@ -53,13 +56,15 @@ Marketplace installation adds the plugin; it does not configure ServiceNow
 access. Local-server requirements and connection setup are in [SETUP.md](SETUP.md).
 
 For other clients, use the [stdio setup](SETUP.md#other-mcp-clients).
-For Microsoft Copilot Cowork, use the [read-only HTTP setup](SETUP.md#cowork-read-only-server).
+For Microsoft Copilot Cowork, use the [authenticated HTTP setup](SETUP.md#cowork-authenticated-server).
 
-**HTTP access:** the read-only server has no client authentication. Anyone who
-can reach it can read through its configured ServiceNow account. Keep it on
-loopback unless external access is deliberately restricted. Incident/change
-searches return up to 20 records updated within the last six months; incident
-search matches literal title text.
+**HTTP access:** Cowork requires a configured Entra delegated resource scope and
+OAuth client registration; installing either plugin does not establish that
+connection. It uses the configured ServiceNow account, not per-requester
+ServiceNow credentials. The legacy four-read endpoint remains loopback-only
+guidance and is not an authenticated Cowork fallback. Incident/change searches
+return up to 20 records updated within the last six months; incident search
+matches literal title text.
 
 ## Agent installation prompt
 
@@ -70,7 +75,9 @@ Follow SETUP.md to connect ServiceNow MCP to my chosen client.
 Check the prerequisites and use my existing credential setup; do not enroll
 credentials or put secrets in repository files or command arguments.
 For the GitHub Copilot app, configure the documented nonsecret provider binding.
-Keep the Cowork HTTP interface read-only and explain its access restrictions.
+For Cowork, use the authenticated restricted incident interface and explain
+the required resource scope, OAuth client registration and source permissions.
+Start with writes disabled; do not expose the legacy anonymous interface.
 Ask before installation, access changes or ServiceNow writes.
 Verify the connection with a read-only request from the chosen client.
 Report missing prerequisites and connection errors. Do not push or publish.

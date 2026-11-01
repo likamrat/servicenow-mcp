@@ -1,7 +1,7 @@
 {
   "name": "servicenow-mcp-server",
   "version": "1.0.0",
-  "description": "Portable ServiceNow MCP with a separate read-only Cowork interface",
+  "description": "Shared ServiceNow MCP backend with authenticated Cowork incident operations",
   "private": true,
   "license": "MIT",
   "engines": { "node": ">=24" },
@@ -9,11 +9,14 @@
   "scripts": {
     "start": "node src/server.js",
     "start:stdio": "node src/stdio.cjs",
+    "start:cowork": "node src/cowork-start.cjs",
+    "contract:cowork": "node scripts/cowork-contract.cjs",
     "test": "node --test",
     "check": "node scripts/check.cjs",
     "notices:check": "node scripts/notices.cjs"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "jose": "6.2.13"
   }
 }

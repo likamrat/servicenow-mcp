@@ -32,7 +32,7 @@ const tools = [
 const ref = value => value && typeof value === "object" ? value.value : value;
 const truth = value => value === true || value === "true" || value === "1";
 
-function createRecords({ source, state }) {
+function createRecords({ source, state, beforeWrite }) {
   const { list, request, instance } = source;
   function readable(name) {
     if (typeof name !== "string" || !NAME.test(name)) throw new Error("Invalid table identifier.");
@@ -181,6 +181,7 @@ function createRecords({ source, state }) {
       if ((await list(args.table, correlation, "sys_id", 2)).length) throw new Error("Correlation already exists; no create attempted.");
     }
     const meta = { action: name, table: args.table, sys_id: args.sys_id, operation_id: args.operation_id, correlation };
+    if (beforeWrite) await beforeWrite();
     state.claim(args.operation_id, meta);
     let response, failure, row;
     try {
@@ -205,6 +206,7 @@ function createRecords({ source, state }) {
     } catch (error) {
       state.record({ ...meta, status: "uncertain", sys_id: response?.result?.sys_id || args.sys_id, reason: error.message, diagnostic: failure?.diagnostic });
       error.diagnostic = failure?.diagnostic;
+      error.outcome = { sys_id: row?.sys_id || response?.result?.sys_id || args.sys_id, observed: row };
       throw error;
     }
     const relatedRecords = [];
@@ -214,6 +216,7 @@ function createRecords({ source, state }) {
     }
     const result = { table: args.table, sys_id: row?.sys_id || args.sys_id, record: row || null,
       source_url: row?.source_url || existing?.source_url, operation_id: args.operation_id, reconciledAfterError: Boolean(failure),
+      ...(failure ? { original_error: { message: failure.message, diagnostic: failure.diagnostic } } : {}),
       ...(deleting ? { deleted: true, absent: true, cleanup_complete: false, relatedRecords } : {}) };
     state.record({ ...meta, status: "confirmed", sys_id: result.sys_id, relatedRecords });
     return result;

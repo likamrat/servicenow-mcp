@@ -4,7 +4,7 @@ Choose the connection for your client:
 
 - [GitHub Copilot app](#github-copilot-app): packaged skills and stdio tools.
 - [Other MCP clients](#other-mcp-clients): launch the Node.js stdio server.
-- [Microsoft Copilot Cowork](#cowork-read-only-server): operate the restricted HTTP server.
+- [Microsoft Copilot Cowork](#cowork-authenticated-server): operate the authenticated restricted HTTP interface.
 
 Use Node.js 24+ and a ServiceNow account with the permissions needed for your
 work. Administrative tools also read dictionary, choice and policy metadata.
@@ -122,7 +122,110 @@ load `.env` files. Keep private client configuration and credentials outside the
 repository. For an explicitly configured terminal process, the same entrypoint
 is available as `npm run start:stdio`.
 
+## Cowork authenticated server
+
+Cowork uses one authenticated connector to the shared backend. It exposes the
+four existing six-month incident/change reads plus incident schema discovery,
+exact assignee resolution, create/update/delete and requester-owned operation
+status. It does not expose generic table or account administration. The source
+account, credentials and operation state use the existing protected binding
+above; there is no separate assignment service or identity map.
+
+The canonical generated tool contract is
+[`contracts/cowork-authenticated-tools.json`](contracts/cowork-authenticated-tools.json).
+Regenerate it with `npm run contract:cowork -- --write`; verify it with
+`npm run contract:cowork -- --check`. Native stdio exposes the same incident
+operations alongside its existing administrative tools.
+
+### Incoming OAuth connection
+
+Register or reuse an explicitly approved Entra resource API and OAuth client.
+Do not substitute a Graph or Work IQ audience, an ID token, or an app-only
+token. The protected resource verifies RS256, the tenant-specific v2 issuer,
+expiry/not-before/issued-at, `tid`, exact resource application GUID `aud`,
+authorized client application GUID `azp`, delegated `scp=Incident.Manage`, and
+an immutable requester `oid`. It has no person or incident allowlist.
+
+The resource API must issue v2 access tokens (`requestedAccessTokenVersion: 2`).
+Request `api://<resource-application-id>/Incident.Manage` and the refresh scope
+required by the client. Configure the client's approved callback and consent
+through its supported registration flow. Cowork uses `OAuthPluginVault`; its
+`referenceId` is the Microsoft token-store registration ID, not an Entra app ID.
+Client secrets belong in the approved token store, never in this checkout or
+the backend configuration.
+
+Every `/mcp` request, including discovery of tools and reads, requires a valid
+token. Unauthenticated resource metadata is available at
+`/.well-known/oauth-protected-resource/mcp` and
+`/.well-known/oauth-protected-resource`. The 401 challenge identifies that
+metadata and the required scope. This server is a protected resource, not an
+authorization server, dynamic client registrar or token store.
+
+### Backend connection and launch
+
+In the protected binding's external `state_directory`, create an
+operator-controlled `cowork-profile.json`:
+
+```json
+{
+  "format": 1,
+  "instance": "https://your-instance.service-now.com",
+  "public_url": "https://your-approved-mcp-host/mcp",
+  "tenant_id": "<tenant GUID>",
+  "audience": "<resource application GUID>",
+  "client_id": "<authorized OAuth client application GUID>",
+  "writes_enabled": false,
+  "port": 3003
+}
+```
+
+`instance` must match the existing binding. Optional `allowed_origins` contains
+exact client HTTP(S) origins; browser origins are rejected by default. Keep the
+profile outside the checkout. The backend does not create registrations,
+consent, external routes or credentials.
+
+```text
+npm ci --ignore-scripts
+npm run start:cowork -- "<absolute directory containing connection.json>"
+```
+
+The launcher verifies the existing executable/provider hashes and passes
+credentials only in its child process environment. The backend binds to
+`127.0.0.1` and reports its owned HTTP PID/port. Use only a separately approved
+HTTPS route to this authenticated listener; never route to the legacy
+administrative service or anonymous endpoint. Keep the launcher under an
+owned process tree and stop that tree or the reported HTTP PID when finished.
+
+Begin with `writes_enabled: false`, verify authenticated retrieval from the
+installed Cowork client and qualify its real confirmation behavior. Enable
+writes only under the operator's approved configuration and user-authorized
+target/change scope. The switch and MCP annotations are not per-operation
+user consent. A successful local test or tool listing is not installed
+Cowork acceptance.
+
+For assignment, read the incident/version, resolve the exact ServiceNow
+identity, then call `update_incident` with only `values.assigned_to` and the
+current `expected_mod_count`. `null` or `""` clears the assignee. The backend
+checks reference existence and independently verifies the assignee and
+preserved group; it does not invent an active-user/role predicate or execute
+dynamic reference qualifiers. Source reference-list eligibility, ACLs and
+business rules are distinct evidence. An Entra email alone does not establish
+an existing ServiceNow identity mapping. Ambiguous or truncated resolution
+requires clarification, not selection of the first candidate.
+
+Creation uses actual source mandatory fields/defaults; deletion requires exact
+authorization and inspection of material native effects. Exact mutation
+preflights and operation recovery are not the six-month search interface.
+Deletion confirms parent absence only and returns `cleanup_complete: false`.
+An error response, changed group, partial readback or lost response retains
+the original evidence and an uncertainty hold. Use `get_incident_operation`;
+do not retry under the same or a new operation UUID or automatically change
+source permissions to force success.
+
 ## Cowork read-only server
+
+This legacy interface is retained for local read-only clients. It is not the
+authenticated Cowork CRUD route.
 
 From this checkout, set the three `SERVICENOW_INSTANCE`, `SERVICENOW_USERNAME`
 and `SERVICENOW_PASSWORD` environment entries above, then run:
@@ -147,21 +250,20 @@ authentication. Keep it on loopback; an externally reachable endpoint needs
 deliberate access restrictions. Anyone able to reach it can use the configured
 account's read access.
 
-Follow the companion
+For the Cowork client package, follow the companion
 [Cowork setup guide](https://github.com/likamrat/servicenow-cowork-plugin/blob/main/SETUP.md)
-to configure its HTTPS connection and install the client package. Use this
-read-only entrypoint, not an administrative service.
+and the authenticated interface above, not this legacy listener.
 
 ## Operation state and recovery
 
-The stdio server keeps instance/account-bound journals and restoration snapshots
+The shared backend keeps instance/account-bound journals and restoration snapshots
 in its private state directory. Processes sharing that directory serialize their
 operations; this does not lock other tools or ServiceNow writers. Source version
 checks are preflight checks, not atomic compare-and-swap.
 
 | Situation | Action |
 |---|---|
-| A write times out or returns an uncertain outcome | Inspect `local_operation_status` and exact source records. Do not resend with the same or a new operation ID. |
+| A write times out or returns an uncertain outcome | Inspect `get_incident_operation` for incident operations, or native `local_operation_status`, and exact source records. Do not resend with the same or a new operation ID. |
 | A paired-style change is partial | Use its original snapshot and current guards for an authorized restoration. |
 | `operation.lock` remains after interruption | Establish the owning process and its last source effects before removing the lock. Preserve the journal. |
 | The instance or source account changes | Use a separate state directory; do not rebind an existing journal. |

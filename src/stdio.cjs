@@ -4,9 +4,7 @@ const { createInterface } = require("node:readline");
 
 async function main() {
   const admin = createAdmin(configuration());
-  const { handleTool, tools: readTools } = require("./server.js");
-  const tools = [...readTools, ...admin.tools];
-  const readNames = new Set(readTools.map(tool => tool.name));
+  const tools = admin.tools;
   const write = response => process.stdout.write(JSON.stringify(response) + "\n");
   async function dispatch(message) {
     const { id, method, params } = message || {};
@@ -27,7 +25,7 @@ async function main() {
       try {
         const name = params?.name;
         const args = params?.arguments === undefined ? {} : params.arguments;
-        const value = readNames.has(name) ? await handleTool(name, args) : await admin.handle(name, args);
+        const value = await admin.handle(name, args);
         result = { content: [{ type: "text", text: JSON.stringify(value) }] };
       } catch (error) {
         result = { isError: true, content: [{ type: "text", text: JSON.stringify({

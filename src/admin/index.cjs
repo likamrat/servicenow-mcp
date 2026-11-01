@@ -2,6 +2,8 @@ const { instanceOrigin } = require("../configuration.cjs");
 const { createSource } = require("./source.cjs");
 const { createState } = require("./state.cjs");
 const { createRecords } = require("./records.cjs");
+const { createIncidents } = require("./incidents.cjs");
+const { createReads } = require("../reads.cjs");
 const { createDeletion } = require("./deletion.cjs");
 const { tools: styleTools, createThemeStyleOperations } = require("./theme-style.cjs");
 const { createLogoRestoreOperations } = require("./logo-restore.cjs");
@@ -42,6 +44,8 @@ function createAdmin(config) {
   const source = createSource({ ...config, instance });
   const state = createState({ ...config, instance });
   const records = createRecords({ source, state });
+  const reads = createReads(source);
+  const incidents = createIncidents({ source, state, records });
   const deletion = createDeletion({ source, state, principal: config.username });
   const dependencies = { ...source, ...state, principal: config.username, instance, directory: config.directory };
   const themes = createThemeStyleOperations(dependencies);
@@ -49,7 +53,7 @@ function createAdmin(config) {
   const conditional = [...accountTools.filter(tool => tool.name !== "local_admin_user_get"), ...importTools,
     ...accessTools.filter(tool => accessNames.has(tool.name)), ...definitionTools.filter(tool => definitionNames.has(tool.name))]
     .map(tool => ({ ...tool, description: "Requires an operator-reviewed source contract; unavailable until configured. Writes reject contract drift. " + tool.description }));
-  const tools = [...records.tools, ...deletion.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
+  const tools = [...reads.tools, ...records.tools, ...incidents.tools, ...deletion.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
   const routes = new Map([
     ...records.tools.map(tool => [tool.name, records.handle]),
     ...deletion.tools.map(tool => [tool.name, deletion.handle]),
@@ -86,13 +90,15 @@ function createAdmin(config) {
       throw error;
     }
   }
-  async function handle(name, args = {}) {
+  async function handle(name, args = {}, callerKey = `local:${config.username}`) {
     const tool = tools.find(tool => tool.name === name);
     if (!tool) throw new Error("Operation not available in this portable build; consult its capability prerequisites.");
+    if (reads.tools.some(item => item.name === name)) return reads.handle(name, args);
     validate(tool.inputSchema, args);
     return state.run(async () => {
       if (!tool.annotations.readOnlyHint && state.isAttempted(args.operation_id)) throw new Error("Operation UUID already attempted; no replay.");
       if (!tool.annotations.readOnlyHint) assertResourceClear(state.directory, args);
+      if (incidents.tools.some(item => item.name === name)) return incidents.handle(name, args, callerKey);
       if (name === "local_admin_patch_theme_style_pair" && state.pendingTheme(args.theme_id))
         throw new Error("Earlier theme operation unresolved; reconcile or use its guarded restoration, not a new patch UUID.");
       if (routes.has(name)) {

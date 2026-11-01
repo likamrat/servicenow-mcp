@@ -6,7 +6,7 @@ description: >-
   configuration work, and MCP connection or authentication failures, including
   safety and recovery planning before execution. Discover the connected
   installation's capabilities and reuse its approved authentication. Separate
-  backend administration from read-only Cowork incident/change scenarios.
+  backend administration from the restricted Cowork incident interface.
 license: MIT
 ---
 
@@ -31,7 +31,7 @@ instance or credential provider.
 ## Read records
 
 Use the connected tool's documented filters, window and result limits. The
-read-only Cowork adapter's incident/change reads cover the last six months;
+Cowork incident/change reads cover the last six months;
 searches return at most 20 records. Its `search_incidents` query is a literal
 substring of the short description, not semantic or full-record search.
 Inspect candidates with `get_incident` before linking symptoms to a cause.
@@ -48,6 +48,15 @@ performing record mutations, account/access administration or configuration
 changes, and when diagnosing failed source operations. It covers exact-name
 resolution, current-operator protection, impact assessment, source authority,
 guarded writes and uncertain-outcome recovery.
+
+When the connected interface exposes the semantic incident tools, use
+`get_incident_schema` for fields and `resolve_incident_assignee` for exact
+identities. Ambiguous or incomplete resolution is not a selection. Use
+`create_incident`, `update_incident` and `delete_incident` within authorization;
+`update_incident.values.assigned_to` takes an exact source user ID or null to
+clear it. Preserve the current incident version and operation UUID. Inspect
+`get_incident_operation` after uncertainty; do not retry. These tools do not
+provision users, grant access or prove reference-list eligibility.
 
 For UI work, use the host's browser/app guidance and compare the intended
 instance and target with the source identity. UI is not a workaround for a

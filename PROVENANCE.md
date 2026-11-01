@@ -11,13 +11,16 @@ are retained in LICENSE.
 `contracts/cowork-tools.json` is byte-identical to that baseline's
 `plugin/mcp-tools.json`; SHA256:
 `0da5f1eb731a69c7d14079ded76a382976a0ffb61ad3feafe94c9bd2c6af1548`.
-The HTTP server and read-only tests retain its behavior. Express is loaded
+The shared read adapter and read-only tests retain its behavior, with incident
+`sys_mod_count` additionally projected for guarded updates. Express is loaded
 only by the HTTP factory so the native stdio package requires no npm runtime
 dependencies.
 
-The seven operator skill files are unchanged from the maintained repository's
+The seven operator skill files originate from the maintained repository's
 authored candidate `54bdb474f07841fa1ffc664ab83da5cfa257ff1a`, matching the
 portable-skills source accepted at `8790a8c832256a95e9d58317101dfae5628d6705`.
+The operations skill additionally describes shared semantic incident dispatch
+and its unchanged authorization/recovery limits.
 Private invocation evidence and installed bindings are not part of this source.
 
 The administrative adapters adapt previously authored local operator code:
@@ -45,11 +48,18 @@ Neither binary nor provider/store is distributed, and no secret store is
 implemented by this package.
 
 The backend stdio path consists of `src/stdio.cjs`, `src/configuration.cjs`,
-`src/server.js`, `src/admin/`, and `contracts/cowork-tools.json`, using Node
+`src/reads.cjs`, `src/admin/`, and the read/incident contracts, using Node
 built-ins. No browser, operating-system credential module, database or
 private session directory is required by the backend.
 
-The optional read-only HTTP entrypoint additionally uses Express. Exact
+The authenticated Cowork entrypoint reuses the protected launcher, existing
+source/record/state backend and maintained Entra verification work. The
+predecessor assignment-only proposal's incident/person maps and fixed reference
+policy are not part of this interface. The thin clients do not own another
+ServiceNow backend or a token store.
+
+The optional HTTP entrypoints additionally use Express; authenticated Cowork
+uses `jose` for standard JWT/JWKS verification. Exact
 versions, package registry URLs and integrity digests are retained in
 `package-lock.json`. `THIRD_PARTY_NOTICES.txt` contains the unmodified license
 texts from the installed locked dependency closure, grouped only when the

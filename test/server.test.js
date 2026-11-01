@@ -260,7 +260,7 @@ test("change reads use GET, the same time boundary and links to returned source 
 });
 
 test("all record reads request and return explicit field sets, retaining supported detail evidence", async () => {
-  const incidentList = ["sys_id", "number", "short_description", "priority", "state", "assigned_to", "assignment_group", "opened_at", "category", "sys_updated_on"];
+  const incidentList = ["sys_id", "number", "short_description", "priority", "state", "assigned_to", "assignment_group", "opened_at", "category", "sys_updated_on", "sys_mod_count"];
   const changeList = ["sys_id", "number", "short_description", "type", "risk", "state", "start_date", "end_date", "assigned_to", "assignment_group", "sys_updated_on"];
   for (const [name, record, table, fields] of [
     ["search_incidents", incident, "incident", incidentList],
