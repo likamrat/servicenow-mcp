@@ -11,6 +11,13 @@ const { tools: accountTools, createUserAccountOperations } = require("./user-acc
 const { tools: importTools, createLogoImportOperations, createLogoImportPolicy } = require("./logo-import.cjs");
 const { createLogoStaging } = require("./staging.cjs");
 const { reviewedContract } = require("./contracts.cjs");
+const { tools: accessTools, createAccessOperations } = require("./access.cjs");
+const { tools: definitionTools, createDefinitionOperations } = require("./definitions.cjs");
+const { assertResourceClear } = require("./resource-guard.cjs");
+const accessNames = new Set(["local_admin_access_read", "local_admin_group_create", "local_admin_role_create",
+  "local_admin_user_role_add", "local_admin_user_role_remove", "local_admin_group_member_add",
+  "local_admin_group_member_remove", "local_admin_group_role_add", "local_admin_group_role_remove"]);
+const definitionNames = new Set(["local_admin_group_update", "local_admin_role_update", "local_admin_group_delete", "local_admin_role_delete_assess"]);
 const id = { type: "string", pattern: "^[a-f0-9]{32}$" };
 const uuid = { type: "string", format: "uuid" };
 const version = { type: "string", pattern: "^\\d+$" };
@@ -39,8 +46,9 @@ function createAdmin(config) {
   const dependencies = { ...source, ...state, principal: config.username, instance, directory: config.directory };
   const themes = createThemeStyleOperations(dependencies);
   const logos = createLogoRestoreOperations(dependencies);
-  const conditional = [...accountTools.filter(tool => tool.name !== "local_admin_user_get"), ...importTools]
-    .map(tool => ({ ...tool, description: "Requires an operator-reviewed source contract; unavailable until configured and matched. " + tool.description }));
+  const conditional = [...accountTools.filter(tool => tool.name !== "local_admin_user_get"), ...importTools,
+    ...accessTools.filter(tool => accessNames.has(tool.name)), ...definitionTools.filter(tool => definitionNames.has(tool.name))]
+    .map(tool => ({ ...tool, description: "Requires an operator-reviewed source contract; unavailable until configured. Writes reject contract drift. " + tool.description }));
   const tools = [...records.tools, ...deletion.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
   const routes = new Map([
     ...records.tools.map(tool => [tool.name, records.handle]),
@@ -84,6 +92,7 @@ function createAdmin(config) {
     validate(tool.inputSchema, args);
     return state.run(async () => {
       if (!tool.annotations.readOnlyHint && state.isAttempted(args.operation_id)) throw new Error("Operation UUID already attempted; no replay.");
+      if (!tool.annotations.readOnlyHint) assertResourceClear(state.directory, args);
       if (name === "local_admin_patch_theme_style_pair" && state.pendingTheme(args.theme_id))
         throw new Error("Earlier theme operation unresolved; reconcile or use its guarded restoration, not a new patch UUID.");
       if (routes.has(name)) {
@@ -100,6 +109,16 @@ function createAdmin(config) {
         policy.protectedNames = [...new Set([...policy.protectedNames, "admin", "guest", "system"])];
         return createUserAccountOperations({ ...dependencies, policy }).handle(name, args);
       }
+      if (accessNames.has(name) || definitionNames.has(name)) {
+        const policy = reviewedContract("account", state.directory, instance);
+        policy.protectedIds = [...new Set([...policy.protectedIds, ...state.retainedIds()])];
+        policy.protectedNames = [...new Set([...policy.protectedNames, "admin", "guest", "system"])];
+        const accessPolicy = reviewedContract("access", state.directory, instance);
+        const access = createAccessOperations({ ...dependencies, policy, accessPolicy,
+          assessRolePickerImpact: name => definitions.assessRolePickerImpact(name) });
+        const definitions = createDefinitionOperations({ ...dependencies, access });
+        return (accessNames.has(name) ? access : definitions).handle(name, args);
+      }
       if (importTools.some(tool => tool.name === name)) {
         const qualified = reviewedContract("image", state.directory, instance);
         return createLogoImportOperations({ ...dependencies,
@@ -107,7 +126,7 @@ function createAdmin(config) {
           checkPolicy: createLogoImportPolicy({ discover: records.discover, list: source.list, qualified }),
         }).handle(name, args);
       }
-      if (name === "local_operation_status") return { operation_id: args.operation_id, entries: state.status(args.operation_id) };
+      if (name === "local_operation_status") return state.status(args.operation_id);
       if (name === "local_admin_set_branding_property") return branding(args);
       const rows = await source.list("sys_user", `sys_id=${args.sys_id}`, userFields.join(","), 2);
       if (rows.length > 1 || rows.length && (rows[0].sys_id !== args.sys_id || userFields.some(field => !Object.hasOwn(rows[0], field))))

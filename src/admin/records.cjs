@@ -130,6 +130,8 @@ function createRecords({ source, state }) {
     for (const [field, value] of Object.entries(values)) {
       permitted(schema, field, true);
       const spec = schema.fields[field];
+      if (spec.type === "boolean" && value !== null && ![true, false, "true", "false", "0", "1"].includes(value))
+        throw new Error("Boolean source fields require an explicit boolean or source boolean string.");
       if (typeof value === "string" && value.length > Math.min(spec.maxLength || 20000, 20000)) throw new Error("Source field length exceeded.");
       if (["1", "3"].includes(spec.choiceMode) && spec.choices.length && value !== null && value !== "" &&
           !spec.choices.some(choice => choice.value === String(value))) throw new Error("Value is not an active source choice.");
@@ -140,8 +142,11 @@ function createRecords({ source, state }) {
         throw new Error(`Source dictionary requires ${spec.name}; conditional policies also apply.`);
   }
   function matches(schema, wanted, row) {
-    return Boolean(row) && Object.entries(wanted).every(([field, value]) => value === null ? row[field] == null || row[field] === "" :
-      schema.fields[field]?.type === "boolean" ? truth(value) === truth(row[field]) : String(value) === String(row[field]));
+    return Boolean(row) && typeof row.sys_mod_count === "string" && /^\d+$/.test(row.sys_mod_count) &&
+      Object.entries(wanted).every(([field, value]) => Object.hasOwn(row, field) &&
+        (value === null ? row[field] === null || row[field] === "" :
+          schema.fields[field]?.type === "boolean" ? [true, false, "true", "false", "0", "1"].includes(row[field]) &&
+            truth(value) === truth(row[field]) : String(value) === String(row[field])));
   }
   async function handle(name, args) {
     const schema = await discover(args.table);

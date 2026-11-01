@@ -4,11 +4,14 @@ const crypto = require("node:crypto");
 const { inspectPng } = require("./png.cjs");
 const { instanceOrigin } = require("../configuration.cjs");
 
-function readBounded(file, limit) {
+function noLinks(file) {
   for (let current = path.resolve(file); ; current = path.dirname(current)) {
     if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw new Error("Logo paths cannot traverse links.");
     if (current === path.dirname(current)) break;
   }
+}
+function readBounded(file, limit) {
+  noLinks(file);
   const fd = fs.openSync(file, "r");
   try {
     const before = fs.fstatSync(fd);
@@ -44,7 +47,9 @@ function createLogoStaging(directory) {
       if (actual.sha256 !== expected_sha256) throw new Error("Logo hash mismatch.");
       const staging_id = crypto.randomUUID();
       const manifest = { version: 1, staging_id, file_name: filename(file_name), ...actual };
+      noLinks(directory);
       fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      noLinks(directory);
       write(path.join(directory, `${staging_id}.png`), bytes);
       write(path.join(directory, `${staging_id}.json`), JSON.stringify(manifest));
       return manifest;

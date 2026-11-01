@@ -7,7 +7,7 @@ const http = require("node:http");
 const { once } = require("node:events");
 const { spawn } = require("node:child_process");
 
-test("native plugin launches without npm dependencies and performs empty source query and exact user read", async (t) => {
+test("declared stdio entrypoint works without npm dependencies when explicitly given process configuration", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "servicenow-plugin-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const plugin = path.join(root, "plugin");

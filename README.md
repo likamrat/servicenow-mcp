@@ -6,8 +6,10 @@ Copilot plugin packaging and a separate, restricted Cowork interface.
 The native plugin includes record schema discovery and CRUD, exact user reads,
 guarded administrative deletion, draft colors and existing PNG-logo bindings.
 User lifecycle and new PNG imports additionally require operator-reviewed
-source contracts. This is **not** a claim of all native administrative tools
-or compatibility with every ServiceNow release. See [capabilities](CAPABILITIES.md).
+source contracts. Managed nonprivileged groups/roles/assignments similarly
+require reviewed account/access contracts. This is **not** a claim of all native
+administrative tools or compatibility with every ServiceNow release.
+See [capabilities](CAPABILITIES.md).
 
 ## GitHub Copilot app
 
@@ -15,8 +17,7 @@ Requires Node.js 24+ and a GitHub Copilot app supporting Agent Plugins 1.0 and
 stdio MCP. The plugin's production stdio path uses only Node built-ins; it
 does not download packages, launch a browser or expose an HTTP listener.
 
-Provide these values to the app's subprocess environment through your approved
-protected launcher or secret manager:
+The stdio process requires these explicit environment entries:
 
 | Variable | Value |
 |---|---|
@@ -25,12 +26,24 @@ protected launcher or secret manager:
 | `SERVICENOW_PASSWORD` | Account secret; never put it in chat or plugin files |
 | `SERVICENOW_MCP_DATA_DIR` | Absolute private state directory outside the checkout |
 
+**Desktop configuration is not yet qualified.** The supported method for
+supplying private per-plugin values in GitHub Copilot desktop1.1.34 still needs
+host confirmation. Agent Plugins 1.0 guarantees only `PLUGIN_ROOT` and
+`PLUGIN_DATA` expansion; do not assume arbitrary operating-system environment
+variables reach the plugin. Section9.1 requires other variables to be supplied
+explicitly in server configuration; package `env` values cannot contain secrets.
+The current native manifest is therefore provisional, not a completed conformant
+desktop configuration. A successful direct stdio launch is not desktop proof.
+Do not install expecting source access until a supported private configuration
+path is established.
+
 Use a source account with the least privileges needed for the intended actions.
 The adapter does not grant source permissions or bypass ACLs. The operating
 system must restrict the state directory to its operator; file modes alone
 do not establish Windows ACL protection.
 
-In the app, open **Customize**, use the marketplace settings control beside the
+Once private configuration is supported and installation is approved, open
+**Customize**, use the marketplace settings control beside the
 marketplace dropdown, and add this repository's Git URL. Find
 `servicenow-mcp` in `servicenow-community`, select **Install**, then confirm it
 is enabled in **Installed**. The selected revision must contain root
@@ -77,7 +90,8 @@ repository neither creates a tunnel nor deploys cloud infrastructure.
 
 The stdio tools create an instance/principal-bound journal and guarded recovery
 snapshots under `SERVICENOW_MCP_DATA_DIR`. They serialize operations across
-processes and retain attempted UUIDs across restart. Use a distinct fresh
+processes sharing that directory and retain attempted UUIDs across restart.
+They do not lock other tools or source writers. Use a distinct fresh
 directory for another instance or account; the adapter refuses to adopt an
 existing unbound journal. Do not reset or migrate another installation's state.
 

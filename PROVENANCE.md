@@ -22,7 +22,9 @@ Private invocation evidence and installed bindings are not part of this source.
 
 The administrative adapters adapt previously authored local operator code:
 record discovery/guarded CRUD, administrative impact/deletion, paired styles,
-PNG validation/staging/linkage/import and bounded user lifecycle. Their
+PNG validation/staging/linkage/import and bounded user lifecycle.
+Managed nonprivileged group/role/assignment adapters retain source-policy
+and unresolved-resource guards. The adapters'
 instance, credential, filesystem and source-contract inputs are injected.
 The old runtime assembler, launch control, approval receipts, journals,
 retention lists, source schema snapshots and vendor script/action/page bodies

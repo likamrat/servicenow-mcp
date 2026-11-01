@@ -193,9 +193,11 @@ function createLogoRestoreOperations({ instance: INSTANCE, list, request, downlo
       outcome.status = failure?.diagnostic?.status >= 400 && failure.diagnostic.status < 500 &&
         !outcome.returnedLinkId && outcome.observedLinkIds?.length === 0 ? "rejected" : "partial_or_uncertain";
       outcome.error = error.message; outcome.diagnostic = failure?.diagnostic || error.diagnostic;
-      save(args.operation_id, outcome); record(outcome);
       const stopped = new Error(`${outcome.status}: ${error.message} No repeat create, relink or compensating action.`);
-      stopped.outcome = outcome; stopped.diagnostic = outcome.diagnostic; throw stopped;
+      stopped.outcome = outcome; stopped.diagnostic = outcome.diagnostic;
+      try { save(args.operation_id, outcome); record(outcome); }
+      catch (receiptError) { outcome.receipt_error = receiptError.message; }
+      throw stopped;
     }
   }
   async function handle(name, args) {
@@ -281,11 +283,14 @@ function createLogoRestoreOperations({ instance: INSTANCE, list, request, downlo
     } catch (error) {
       outcome.status = failure?.diagnostic?.status >= 400 && failure.diagnostic.status < 500 && !outcome.linkAbsent ? "rejected" : "partial_or_uncertain";
       outcome.error = error.message; outcome.diagnostic = failure?.diagnostic || error.diagnostic;
-      save(args.operation_id, outcome);
-      record({ action: outcome.action, operation_id: args.operation_id, status: outcome.status, table: TABLE,
-        sys_id: link.sys_id, linkAbsent: outcome.linkAbsent, reason: error.message, diagnostic: outcome.diagnostic });
       const stopped = new Error(`${outcome.status}: ${error.message} No automatic retry or compensating write.`);
-      stopped.outcome = outcome; stopped.diagnostic = outcome.diagnostic; throw stopped;
+      stopped.outcome = outcome; stopped.diagnostic = outcome.diagnostic;
+      try {
+        save(args.operation_id, outcome);
+        record({ action: outcome.action, operation_id: args.operation_id, status: outcome.status, table: TABLE,
+          sys_id: link.sys_id, linkAbsent: outcome.linkAbsent, reason: error.message, diagnostic: outcome.diagnostic });
+      } catch (receiptError) { outcome.receipt_error = receiptError.message; }
+      throw stopped;
     }
   }
   return { tools: [...tools, ...applyTools], handle, guards: { target, parents, attachment, bindings } };

@@ -43,7 +43,7 @@ function createState({ directory, instance, username }) {
       fs.fsyncSync(fd);
       const identity = path.join(directory, "binding.json");
       if (!fs.existsSync(identity)) {
-        const freshFiles = ["operation.lock", "account-contract.json", "image-contract.json", "retained-user-ids.json"];
+        const freshFiles = ["operation.lock", "account-contract.json", "image-contract.json", "access-contract.json", "retained-user-ids.json"];
         if (fs.readdirSync(directory).some(file => !freshFiles.includes(file)))
           throw new Error("Unbound nonempty state directory; do not adopt or reset existing state.");
         const file = fs.openSync(identity, "wx", 0o600);
@@ -79,8 +79,27 @@ function createState({ directory, instance, username }) {
       !["confirmed", "resolved_by_restore", "no_change", "rejected"].includes(
         entries.filter(entry => entry.operation_id === row.operation_id).at(-1).status));
   }
+  function status(id) {
+    const receipts = [];
+    for (const [folder, suffix] of [
+      ["user-account-v2-receipts", ".operation.json"],
+      ["theme-style-receipts", ".operation.json"],
+      ["modern-logo-restore-receipts", ".json"],
+      ["logo-import-receipts", ".json"],
+      ["access-operation-receipts", ".operation.json"],
+      ["definition-operation-receipts", ".json"],
+    ]) {
+      const file = path.join(directory, folder, id + suffix);
+      if (!fs.existsSync(file)) continue;
+      const info = fs.lstatSync(file);
+      if (info.isSymbolicLink() || !info.isFile() || info.size > 32 * 1024 * 1024)
+        throw new Error("Unsafe or oversized private operation receipt.");
+      receipts.push({ kind: folder, outcome: JSON.parse(fs.readFileSync(file, "utf8")) });
+    }
+    return { operation_id: id, entries: entries.filter(row => row.operation_id === id), receipts };
+  }
   return { directory, run, record: append, claim, isAttempted: attempted, retainedIds, unresolved, pendingTheme,
-    status: id => entries.filter(row => row.operation_id === id) };
+    status };
 }
 
 module.exports = { createState };

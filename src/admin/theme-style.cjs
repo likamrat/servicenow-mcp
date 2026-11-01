@@ -254,10 +254,14 @@ function createThemeStyleOperations({ instance: INSTANCE, list, request, record,
     } catch (error) {
       outcome.status = "partial_or_uncertain";
       outcome.error = error.message;
-      save(operationFile, outcome);
-      record({ action: "admin_theme_style_pair", operation_id: args.operation_id, snapshot_id: snapshot.snapshotId,
-        status: "partial_or_uncertain", mode: outcome.action, reason: error.message });
       error.outcome = outcome;
+      try {
+        save(operationFile, outcome);
+        record({ action: "admin_theme_style_pair", operation_id: args.operation_id, snapshot_id: snapshot.snapshotId,
+          status: "partial_or_uncertain", mode: outcome.action, reason: error.message });
+      } catch (receiptError) {
+        outcome.receipt_error = receiptError.message;
+      }
       throw error;
     }
   }

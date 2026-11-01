@@ -55,8 +55,8 @@ function createDeletion({ source, state, principal }) {
       outcome.status = "uncertain";
       outcome.error = error.message;
       outcome.diagnostic = failure?.diagnostic || error.diagnostic;
-      state.record(outcome);
       error.outcome = outcome;
+      try { state.record(outcome); } catch (receiptError) { outcome.receipt_error = receiptError.message; }
       throw error;
     }
   }
