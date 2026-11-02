@@ -124,6 +124,26 @@ The packaged skills are `servicenow-operations` and `servicenow-themes`.
 Existing personal or repository copies can take precedence, so check the loaded
 skill's path when diagnosing an unexpected selection.
 
+## Agent-assisted setup
+
+If you prefer an agent to help configure the connection, use this prompt from
+the repository checkout:
+
+```text
+Follow docs/SETUP.md to connect ServiceNow MCP to my chosen client.
+Check the prerequisites and use my existing credential setup; do not enroll
+credentials or put secrets in repository files or command arguments.
+For the GitHub Copilot app, configure the documented nonsecret provider binding.
+For remote clients, use the authenticated interface and explain the separate
+Incident.Manage/User.Manage/User.Access.Manage scopes, OAuth registration and
+source-policy requirements. Keep access policy disabled until its full role
+closure and native effects are reviewed. Do not create test accounts manually.
+Start with writes disabled; do not expose the legacy anonymous interface.
+Ask before installation, access changes or ServiceNow writes.
+Verify the connection with a read-only request from the chosen client.
+Report missing prerequisites and connection errors. Do not push or publish.
+```
+
 ## Other MCP clients
 
 Clone the server:

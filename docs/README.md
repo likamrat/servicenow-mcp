@@ -6,12 +6,14 @@
 |---|---|
 | [Setup](SETUP.md) | Client connections, credential-provider binding, OAuth scopes, reviewed source policies and operation recovery. |
 | [Tool reference](CAPABILITIES.md) | Supported record, user, access and theme operations, their prerequisites and limits. |
+| [Development](DEVELOPMENT.md) | Local checks, synthetic tests, generated contracts and release metadata. |
 | [Source and dependency provenance](PROVENANCE.md) | Source lineage, runtime components and third-party dependency notices. |
 
 ## Start here
 
 - [GitHub Copilot app](SETUP.md#github-copilot-app)
 - [Update an installed plugin](SETUP.md#update-an-installed-plugin)
+- [Agent-assisted setup](SETUP.md#agent-assisted-setup)
 - [Other MCP clients](SETUP.md#other-mcp-clients)
 - [Authenticated Cowork server](SETUP.md#cowork-authenticated-server)
 - [Generic user CRUD](SETUP.md#generic-user-crud)
