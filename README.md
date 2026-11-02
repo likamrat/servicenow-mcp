@@ -36,18 +36,29 @@ The incident number and person are illustrative; replace them with your own.
 ---
 config:
   htmlLabels: false
+  look: classic
+  fontFamily: system-ui, sans-serif
+  block:
+    padding: 12
 ---
-flowchart TB
-    Context["Work IQ /<br/>directory tools<br/>(optional)"]
-    Local["GitHub Copilot<br/>Local MCP clients"]
-    Remote["Copilot Cowork"]
-    Context -.-> Local & Remote
-    Local -->|"Local stdio"| MCP["ServiceNow MCP<br/>Shared backend"]
-    Remote -->|"Authenticated HTTP<br/>Scoped tools"| MCP
-    MCP <-->|"API calls and readback"| ServiceNow["ServiceNow<br/>Account permissions<br/>Native rules"]
+block
+  columns 4
+  space Context["Work IQ / directory tools<br/>Optional assistant context"]:2 space
+  space:4
+  Local["GitHub Copilot / MCP clients<br/>Local stdio"]:2 Remote["Microsoft Copilot Cowork<br/>Authenticated HTTP + scopes"]:2
+  space:4
+  space MCP["ServiceNow MCP<br/>Shared backend"]:2 space
+  space:4
+  space ServiceNow["ServiceNow<br/>Permissions + native rules"]:2 space
+  Context -.-> Local
+  Context -.-> Remote
+  Local --> MCP
+  Remote --> MCP
+  MCP <--> ServiceNow
 ```
 
-Source calls use the configured ServiceNow account; the assistant composes the workflow.
+API calls and readback use the configured ServiceNow account; the assistant
+composes the workflow.
 Write guards include schema, policy and version checks. The operation journal
 supports read-only recovery.
 
