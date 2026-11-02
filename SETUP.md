@@ -127,7 +127,8 @@ is available as `npm run start:stdio`.
 Cowork uses one authenticated connector to the shared backend. Its catalog has
 the four existing six-month incident/change reads plus incident schema discovery,
 exact assignee resolution, create/update/delete and requester-owned operation
-status, and eight generic user CRUD tools. It does not expose arbitrary table,
+status, eight generic user CRUD tools and four policy-controlled access
+continuation tools. It does not expose arbitrary table,
 credential, role/group or theme administration. The source
 account, credentials and operation state use the existing protected binding
 above; there is no separate assignment service or identity map.
@@ -147,15 +148,17 @@ expiry/not-before/issued-at, `tid`, exact resource application GUID `aud`,
 authorized client application GUID `azp`, an immutable requester `oid`, and at
 least one supported delegated scope. `Incident.Manage` admits the ten existing
 incident/change tools. `User.Manage` admits the eight user CRUD tools. Both scopes
-admit the combined eighteen-tool catalog. Listing and dispatch enforce the
+admit the eighteen incident/user tools. `User.Access.Manage` admits the four
+reviewed-access tools; all three scopes admit twenty-two. Listing and dispatch enforce the
 same separation; an incident-only token cannot manage users. There is no person
 or incident allowlist.
 
 The resource API must issue v2 access tokens (`requestedAccessTokenVersion: 2`).
 Request only the resource permissions required by the client:
 `api://<resource-application-id>/Incident.Manage` and/or
-`api://<resource-application-id>/User.Manage`, plus its required refresh scope.
-Adding `User.Manage` requires an explicitly approved resource permission/client
+`api://<resource-application-id>/User.Manage` and/or
+`api://<resource-application-id>/User.Access.Manage`, plus its required refresh scope.
+Adding either user scope requires an explicitly approved resource permission/client
 consent change; existing incident consent is not expanded by installing code.
 Configure the client's approved callback and consent
 through its supported registration flow. Cowork uses `OAuthPluginVault`; its
@@ -345,7 +348,7 @@ with a different UUID or caller. If the response was lost, a later matching
 account is recorded as observed, not falsely attributed as a confirmed creation.
 Caller-owned recovery survives restart; shared holds prevent cross-caller replay.
 
-### Agent-composed onboarding is not yet automatic access provisioning
+### Agent-composed creation, reviewed access and assignment
 
 The intended sequence is agent-side context lookup, exact source lookup, generic
 creation only when authorized absence is established, then separately qualified
@@ -358,16 +361,121 @@ qualifier may require memberships or ACL-bearing roles; a human identity and
 successful creation do not satisfy those requirements. Do not invent an
 active-user prerequisite when the actual qualifier does not contain one.
 
-The existing native access tools are limited to their reviewed managed
-nonprivileged definitions. They are **not** a general grant mechanism for an
-existing ACL-bearing incident role or an active assignment group. If eligibility
-requires such a grant, the remaining capability is a separately reviewed,
-explicitly authorized access/lifecycle continuation covering the actual role
-closure and native effects. Stop with the retained account identity and that
-precise gate; do not use profile fields, automatic activation, arbitrary grants,
-manual pre-provisioning or a source-policy change to manufacture assignment
-success. Generic user CRUD delivery is not proof of complete just-in-time
-assignment through the client.
+The four generic reviewed-access tools provide that continuation on the same
+backend. They do not widen the older managed-definition tools or create a
+special-purpose onboarding service:
+
+| Tool | Purpose |
+|---|---|
+| `inspect_user_access_policy` | With no arguments, list configured definition-policy keys. With `policy`, qualify that enabled key against current source evidence before a user exists. Alternatively, supply `group_id`/`role_id` and optional `activate` to obtain unapproved review evidence. |
+| `assess_user_access` | Read exact user/access state for a qualified policy; save a five-minute, caller-bound assessment with missing stages. |
+| `apply_user_access` | Apply only missing stages from that assessment after exact native-effect acknowledgments and fresh source checks. |
+| `get_user_access_operation` | Inspect the caller's original stage receipts and current access, without resuming or replaying a grant. |
+
+Definition policies contain no preloaded user names or directory IDs. The agent
+resolves each requested person at runtime and supplies the legitimate source
+user ID. Work IQ or another directory tool belongs to the agent-side context
+step; supplied source attributes do not become backend-verified directory claims.
+
+Preflight the selected policy **before** `create_user`. An unavailable/disabled
+policy or insufficient caller scope should not produce avoidable accounts.
+When policy and authorization are present, the actual agent invokes
+`create_user`, `assess_user_access`, `apply_user_access` and `update_incident`.
+Worker/coordinator scripts must not provision or grant directly to set up a
+successful-looking demo. The backend's internal source HTTP requests are the
+normal implementation of those MCP tools.
+
+### Reviewed existing-definition access policy
+
+No access continuation is enabled by default. Install a reviewed
+`user-access-contract.json` in the existing private state directory:
+
+```json
+{
+  "format": 1,
+  "instance": "https://your-instance.service-now.com",
+  "sourceEvidenceSha256": "<private source review evidence SHA256>",
+  "protectedIds": [],
+  "protectedNames": ["admin", "guest", "system"],
+  "policies": [
+    {
+      "key": "support-assignee",
+      "group_id": "<reviewed existing group sys_id or null>",
+      "role_id": "<reviewed existing role sys_id or null>",
+      "activate": false,
+      "enabled": false,
+      "allow_role_delegation": false,
+      "evidence_sha256": "<reviewed inspect_user_access_policy fingerprint>",
+      "native_effects": ["<exact effects returned by inspection>"],
+      "direct_origin_values": ["<reviewed native direct-grant origin value>"]
+    }
+  ]
+}
+```
+
+Use JSON `null`, not the string `"null"`, for an omitted group or role. At least
+one group, role or explicit activation must be selected. `activate` defaults to
+false for inspection and must be explicit in installed policy. Enable a key only
+after the actual group, role and access effects are reviewed and authorized.
+An inspection result or copied fingerprint is not approval.
+
+Read-only inspection walks the complete bounded downward role closure, preserving
+every edge identity/version and role flags. It reads the selected group's direct
+role relationships, linked ACL definitions, and inherited schemas/active hooks
+for the seven affected user/access tables. ACL and executable rule bodies are
+hashed in memory, never emitted or installed as source code. Identity/version
+pages must be complete, ordered and consistent. The review must additionally
+cover application role checks, visibility limits and native hook semantics;
+neither the fingerprint nor non-elevated flags establish absence of privilege.
+The runtime rechecks the evidence before assessment and before each source stage.
+Identity queries are bounded and batched, not unbounded user inventories.
+
+Administrative/elevated/scoped-admin or restricted-grantor roles are not
+supported, even through a containing role. Parented or externally managed
+groups are also blocked: their membership/role inheritance has not been
+implemented as a universal assumption. Root local groups may be active and may
+carry explicitly reviewed ACL-bearing roles. No definition is adopted into the
+older managed-definition store and no role/group definition is changed.
+
+If any role in the reviewed closure has `can_delegate=true`, inspection discloses
+that condition and adds `reviewed-role-delegation-eligibility` to its native
+effects. Installed policy must explicitly set `allow_role_delegation=true` to
+permit the existing role metadata after review of the actual native meaning.
+`can_delegate` describes a role that can be delegated, not authority for the user
+to administer roles. The separate `role_delegator` role remains hard-blocked
+alongside administrative roles. This does not flip the source flag, grant role
+administration or create a delegation; it prevents treating that default/flag as
+harmless or silently ignoring it. All other hard role protections remain.
+
+`direct_origin_values` records actual source origin values, including a
+non-GUID sentinel if the source uses one. The backend writes only `{user,role}`
+for a direct grant and `{user,group}` for membership; native inherited/state/
+origin bookkeeping is read back, never fabricated. Missing contained-role
+expansion, unexpected membership/role additions, changed unrelated roles or
+unreadable origins leave the operation uncertain. Existing applicable
+relationships are reused without adding duplicates.
+
+Activation runs only when the selected policy explicitly requires it and the
+user is inactive and locked. It writes only `active=true`, requires a new source
+version and preserves lock/notification/identity state. It never unlocks,
+sets a password or proves that all possible authentication channels are disabled.
+Native membership recomputation or other unexpected effects stop later stages.
+Do not add activation merely because an incident reference predicate is assumed
+to require it; inspect the actual source requirements.
+
+Each apply records durable caller/target intent and a source-attempt journal
+before sending any stage. Confirmed stages and response IDs are retained if a
+later stage is denied or fails. Lost responses, partial native expansion or
+policy drift between stages never trigger automatic retry, rollback or deletion.
+The user hold also blocks assignment and older user-target access paths until
+the original uncertainty is reconciled. Caller-bound recovery is read-only;
+another UUID or caller does not bypass it.
+
+This implements the generic local path, not proof of a deployed policy or
+universal source permission. Qualify a fresh natural request such as
+“Assign this incident to Morgan Lee” through the actual client with authorized
+directory discovery and MCP creation/access/assignment evidence. Do not turn the
+acceptance prompt into tool instructions or require a person's email routinely.
 
 ## Cowork read-only server
 

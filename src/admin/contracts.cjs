@@ -7,6 +7,19 @@ const object = properties => ({ type: "object", properties, required: Object.key
 const versions = { type: "array", items: object({ sys_id: id, sys_mod_count: { type: "string", pattern: "^\\d+$" } }) };
 const accessTables = ["sys_user_group", "sys_user_role", "sys_user_has_role", "sys_group_has_role", "sys_user_role_contains", "sys_user_grmember"];
 const schemas = {
+  "user-access": object({
+    format: { const: 1 }, instance: { type: "string" }, sourceEvidenceSha256: sha,
+    protectedIds: { type: "array", uniqueItems: true, items: id },
+    protectedNames: { type: "array", uniqueItems: true, items: { type: "string", maxLength: 255 } },
+    policies: { type: "array", minItems: 1, maxItems: 20, items: object({
+      key: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,63}$" },
+      group_id: { type: ["string", "null"], pattern: "^[a-f0-9]{32}$" },
+      role_id: { type: ["string", "null"], pattern: "^[a-f0-9]{32}$" },
+      activate: { type: "boolean" }, enabled: { type: "boolean" }, allow_role_delegation: { type: "boolean" }, evidence_sha256: sha,
+      native_effects: { type: "array", uniqueItems: true, items: { type: "string", maxLength: 100 } },
+      direct_origin_values: { type: "array", minItems: 1, maxItems: 10, uniqueItems: true, items: { type: "string", maxLength: 100 } },
+    }) },
+  }),
   "user-profile": object({ format: { const: 1 }, instance: { type: "string" },
     schema_sha256: sha, rules_sha256: sha, sourceEvidenceSha256: sha,
     protectedIds: { type: "array", uniqueItems: true, items: id },

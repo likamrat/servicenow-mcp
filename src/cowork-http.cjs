@@ -3,10 +3,12 @@ const path = require("node:path");
 const { validate } = require("./admin/validate.cjs");
 const { instanceOrigin } = require("./configuration.cjs");
 const { requestOrigin, requestBoundary } = require("./http-boundary.cjs");
-const { SCOPE, USER_SCOPE, MANAGEMENT_SCOPES, authProperties, CoworkAuthError } = require("./cowork-auth.cjs");
+const { SCOPE, USER_SCOPE, USER_ACCESS_SCOPE, MANAGEMENT_SCOPES, authProperties, CoworkAuthError } = require("./cowork-auth.cjs");
 const userTools = require("./admin/users.cjs").tools;
-const tools = [...require("../contracts/cowork-tools.json").tools, ...require("../contracts/incident-tools.json").tools, ...userTools];
-const toolScope = tool => userTools.some(item => item.name === tool.name) ? USER_SCOPE : SCOPE;
+const userAccessTools = require("./admin/user-access.cjs").tools;
+const tools = [...require("../contracts/cowork-tools.json").tools, ...require("../contracts/incident-tools.json").tools, ...userTools, ...userAccessTools];
+const toolScope = tool => userAccessTools.some(item => item.name === tool.name) ? USER_ACCESS_SCOPE :
+  userTools.some(item => item.name === tool.name) ? USER_SCOPE : SCOPE;
 const admittedTools = caller => tools.filter(tool => caller.scopes?.includes(toolScope(tool)));
 const profileSchema = { type: "object", properties: { ...authProperties,
   format: { const: 1 }, instance: { type: "string" }, public_url: { type: "string", maxLength: 2048 },

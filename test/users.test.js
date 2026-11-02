@@ -174,13 +174,17 @@ test("signed remote user CRUD requires its own scope and uses the same caller-is
     assert.equal(response.status, 200);
     return response.json();
   };
-  for (const [scope, count] of [["Incident.Manage", 10], ["User.Manage", 8], ["Incident.Manage User.Manage", 18]]) {
+  for (const [scope, count] of [["Incident.Manage", 10], ["User.Manage", 8], ["User.Access.Manage", 4],
+    ["Incident.Manage User.Manage", 18], ["Incident.Manage User.Manage User.Access.Manage", 22]]) {
     const result = await rpc(scope, "tools/list");
     assert.equal(result.result.tools.length, count);
   }
   const args = { user_name: "avery", profile: { email: "avery@example.invalid" }, operation_id: randomUUID() };
   const denied = await rpc("Incident.Manage", "tools/call", { name: "create_user", arguments: args });
   assert.equal(denied.result.isError, true);
+  assert.equal(f.writes().length, 0);
+  const accessDenied = await rpc("User.Manage", "tools/call", { name: "apply_user_access", arguments: {} });
+  assert.equal(accessDenied.result.isError, true);
   assert.equal(f.writes().length, 0);
   const created = await rpc("User.Manage", "tools/call", { name: "create_user", arguments: args });
   assert.notEqual(created.result.isError, true, created.result.content[0].text);

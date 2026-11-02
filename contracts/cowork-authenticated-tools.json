@@ -564,6 +564,128 @@
         ],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "inspect_user_access_policy",
+      "description": "Preflight generic access continuation BEFORE creating a source user. With no arguments, list privately configured definition-policy keys (not user lists). With policy, verify the enabled policy's current group, full contained-role/ACL/source-hook evidence. Alternatively supply existing group_id/role_id and optional activate to produce review evidence, NOT approval. Do not mix policy and definition inputs. No grant, adoption, directory lookup or source write.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "policy": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "group_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "role_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "activate": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "assess_user_access",
+      "description": "Read one exact source user's current identity, memberships and effective roles against an enabled operator-reviewed generic definition policy. Saves a five-minute caller-bound assessment with missing stages and material native effects. Works for newly created or existing legitimate local users, not preloaded people. No source grant or approval. Protected/operator/retained/external/service identities and incomplete evidence stop the path.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "policy": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          }
+        },
+        "required": [
+          "sys_id",
+          "policy"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "apply_user_access",
+      "description": "Apply only the reviewed policy's missing existing-group membership, direct role grant and activation if explicitly configured, from this caller's current assessment. Native role expansion and unrelated access/profile preservation are verified after every stage. Never writes inherited-role bookkeeping, passwords, unlock, new role/group definitions or incident assignment. Multiple stages are not atomic: retain confirmed stages and user identity on denial/partial/uncertain outcome, never replay with any UUID or caller. Acknowledgments are not user consent or a source ACL override.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "assessment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "acknowledged_native_effects": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "native-membership-and-cache-effects",
+                "native-direct-and-contained-role-grants",
+                "reviewed-acl-and-application-access",
+                "conditional-source-hooks",
+                "account-activation-with-lock-preserved",
+                "reviewed-role-delegation-eligibility"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sys_id",
+          "assessment_id",
+          "operation_id",
+          "acknowledged_native_effects"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_user_access_operation",
+      "description": "Read this caller's original generic access-continuation receipt and current source access when readable. Retains user identity, stage receipts, denials and uncertainty. Does not repeat grants, delete retained accounts, upgrade attribution or clear resource holds.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "operation_id"
+        ],
+        "additionalProperties": false
+      }
     }
   ]
 }

@@ -1,7 +1,8 @@
 const { validate } = require("./admin/validate.cjs");
 const SCOPE = "Incident.Manage";
 const USER_SCOPE = "User.Manage";
-const MANAGEMENT_SCOPES = [SCOPE, USER_SCOPE];
+const USER_ACCESS_SCOPE = "User.Access.Manage";
+const MANAGEMENT_SCOPES = [SCOPE, USER_SCOPE, USER_ACCESS_SCOPE];
 const guid = { type: "string", pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$" };
 const authProperties = { tenant_id: guid, audience: guid, client_id: guid };
 
@@ -54,4 +55,4 @@ async function createEntraVerifier(config, { key, now = Date.now } = {}) {
     return Object.freeze({ tenant_id: tenant, object_id: payload.oid, client_id: client, scopes: Object.freeze(scopes) });
   };
 }
-module.exports = { SCOPE, USER_SCOPE, MANAGEMENT_SCOPES, authProperties, CoworkAuthError, createEntraVerifier };
+module.exports = { SCOPE, USER_SCOPE, USER_ACCESS_SCOPE, MANAGEMENT_SCOPES, authProperties, CoworkAuthError, createEntraVerifier };

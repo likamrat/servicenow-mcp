@@ -54,6 +54,8 @@ function createIncidents({ source, state, records }) {
       if (value === null || value === "") { values[field] = ""; continue; }
       if (typeof value !== "string" || !ID.test(value))
         throw new Error(`Reference ${field} requires an exact source sys_id, or null/empty to clear.`);
+      if (spec.reference === "sys_user" && (state.unresolved("sys_user") || state.unresolved("sys_user", value)))
+        throw new Error("Referenced user has an unresolved operation; reconcile before incident assignment.");
       const rows = await source.list(spec.reference, `sys_id=${value}`, "sys_id", 2);
       if (rows.length !== 1 || rows[0].sys_id !== value)
         throw new Error(`Reference ${field} is absent, ambiguous or unreadable; no write sent.`);

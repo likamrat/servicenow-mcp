@@ -16,7 +16,7 @@ interface for Microsoft Copilot Cowork over the same backend.
 |---|---|
 | Records | Discover schemas; query, read, create, update and delete incidents, knowledge bases and articles. |
 | Users | Look up exact identities; read, create and update ordinary profiles including email; assess and delete users with impact guards. Native administrative tools additionally support explicit lifecycle actions. |
-| Access | Create managed nonprivileged groups and roles; update descriptions and direct assignments. |
+| Access | Inspect reviewed existing-group/role policies, assess a user and apply only permitted access stages; native managed-definition tools remain separate. |
 | Themes | Edit and restore draft primary colors and corner radius; import, apply and remove PNG-logo links. |
 | Incident and change lookup | Search recent incidents and changes, or read a ticket by number. |
 | Cowork incident management | Create, update and delete incidents; resolve exact assignees and assign, reassign or clear ownership. |
@@ -38,10 +38,12 @@ flowchart LR
 
 GitHub Copilot uses the stdio interface for records and administration.
 [ServiceNow for Cowork](https://github.com/likamrat/servicenow-cowork-plugin)
-uses the authenticated HTTP interface. Its eighteen-tool catalog includes the
-ten incident/change tools and eight generic user CRUD tools. Discovery exposes
+uses the authenticated HTTP interface. Its twenty-two-tool catalog includes the
+ten incident/change tools, eight generic user CRUD tools and four reviewed-access
+continuation tools. Discovery exposes
 only tools covered by the caller's verified delegated scopes: `Incident.Manage`
-or `User.Manage`. Both clients use the same backend and private operation
+for incidents, `User.Manage` for users and `User.Access.Manage` for reviewed
+access. Both clients use the same backend and private operation
 journal. Generic user CRUD is usable by any supported MCP agent; it is not
 coupled to Cowork, Work IQ or a directory login implementation.
 
@@ -50,9 +52,20 @@ then look up or create a ServiceNow user and use the exact returned `sys_id` for
 incident assignment. Directory attributes are request data, not a backend-verified
 cross-system identity. Creation is inactive, locked and notification-disabled
 without credentials or access grants. **Creation alone does not establish
-assignee readiness.** Required lifecycle, membership or role changes need their
-own supported, separately authorized path; the remote CRUD interface does not
-expose arbitrary access or theme administration.
+assignee readiness.** The agent first checks an installed, reviewed access policy
+before creating a user, then uses its caller-bound assessment to apply only the
+missing membership/role stages and activation if explicitly required. The policy
+names existing definitions, not people; it can apply to future users discovered
+at request time. Arbitrary grants, unlock/password changes and theme
+administration remain outside that interface.
+
+Ask naturally, for example: “Assign this incident to Morgan Lee.” The agent
+discovers the person through its permitted directory/context tools, resolves or
+creates the source user through MCP, applies only approved access and reads back
+the assignment. Missing identity, caller permission or reviewed policy is a
+specific blocker—not a reason to guess, ask routinely for an email, or
+pre-provision a demo account manually. Live client execution still must be
+qualified; local tests are not evidence that every source policy is installed.
 
 ## Get started
 
@@ -87,7 +100,9 @@ Check the prerequisites and use my existing credential setup; do not enroll
 credentials or put secrets in repository files or command arguments.
 For the GitHub Copilot app, configure the documented nonsecret provider binding.
 For remote clients, use the authenticated interface and explain the separate
-Incident.Manage/User.Manage scopes, OAuth registration and source-policy requirements.
+Incident.Manage/User.Manage/User.Access.Manage scopes, OAuth registration and
+source-policy requirements. Keep access policy disabled until its full role
+closure and native effects are reviewed. Do not create test accounts manually.
 Start with writes disabled; do not expose the legacy anonymous interface.
 Ask before installation, access changes or ServiceNow writes.
 Verify the connection with a read-only request from the chosen client.

@@ -70,8 +70,20 @@ Ordinary profile CRUD excludes credentials, login/status and role/group values.
 Creation is inactive, locked and notification-disabled and reports assignee
 readiness as not evaluated. Retain that identity if later eligibility or
 assignment is blocked. Do not activate or grant ACL-bearing roles through a
-profile-field workaround: use an actually supported, separately authorized
-access/lifecycle path or report the exact missing gate. For deletion, retain the
+profile-field workaround. When exposed, use `inspect_user_access_policy` before
+creating a user to confirm an enabled reviewed definition policy and the caller's
+access scope. After source identity is established, use `assess_user_access` then
+`apply_user_access` with the exact assessment/effects. These generic tools apply
+only configured missing memberships/roles and activation if explicitly required,
+not arbitrary access. Inspect `get_user_access_operation` after partial failure;
+retain the created user and confirmed stages without a new-UUID replay.
+
+Use natural prompts such as “Assign this incident to Morgan Lee.” Resolve
+previously unseen people from the authorized directory at request time; no
+preloaded person list or manual source provisioning is part of the workflow.
+All actual source creation/access/assignment must be MCP tool invocations.
+If a policy or caller permission is unavailable, explain that precise gate
+before creating avoidable accounts. For deletion, retain the
 caller-bound assessment and all native effects, version/hash and confirmation
 requirements. Recover uncertain writes through the original user-operation ID,
 never a new caller or UUID.

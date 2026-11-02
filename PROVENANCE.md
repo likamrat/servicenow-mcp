@@ -65,6 +65,12 @@ request data; no Graph/Work IQ client or authentication dependency was added.
 `User.Manage` is a separate remote delegated permission, not an expansion of
 existing incident-only consent.
 
+The reviewed existing-definition access continuation is original shared-backend
+code using the same source/schema/state primitives. It fingerprints complete
+bounded role/ACL/source-hook evidence and applies staged changes only under
+private reviewed policy. It does not copy vendor rule bodies, change the older
+managed-access restrictions or add a directory provider/framework.
+
 The optional HTTP entrypoints additionally use Express; authenticated Cowork
 uses `jose` for standard JWT/JWKS verification. Exact
 versions, package registry URLs and integrity digests are retained in

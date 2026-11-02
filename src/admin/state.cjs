@@ -51,7 +51,7 @@ function createState({ directory, instance, username }) {
       const identity = path.join(directory, "binding.json");
       if (!fs.existsSync(identity)) {
         const freshFiles = ["operation.lock", "account-contract.json", "image-contract.json", "access-contract.json",
-          "cowork-profile.json", "user-profile-contract.json", "retained-user-ids.json"];
+          "cowork-profile.json", "user-profile-contract.json", "user-access-contract.json", "retained-user-ids.json"];
         if (fs.readdirSync(directory).some(file => !freshFiles.includes(file)))
           throw new Error("Unbound nonempty state directory; do not adopt or reset existing state.");
         const file = fs.openSync(identity, "wx", 0o600);
