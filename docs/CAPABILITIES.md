@@ -19,8 +19,9 @@ delegated scope.
 | Inspect a previous write | `get_incident_operation` |
 
 The four incident/change lookup tools cover records updated in the last six
-months; searches return at most 20 records. Incident search matches a literal
-substring of the short description. Empty or truncated results do not prove
+months; searches return at most 20 records. Incident numbers match exactly;
+other query text matches a literal substring of the short description.
+Empty or truncated results do not prove
 instance-wide absence. Change requests are read-only through these tools.
 
 For assignment, resolve the exact ServiceNow user and use its `sys_id` in
