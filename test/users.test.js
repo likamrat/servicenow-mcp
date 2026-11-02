@@ -12,7 +12,7 @@ function fixture(t) {
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const rows = [];
   const requests = [];
-  const mode = { lostResponse: false, deny: false, unexpectedActive: false, ruleVersion: "0" };
+  const mode = { lostResponse: false, missingResponseIdentity: false, deny: false, unexpectedActive: false, ruleVersion: "0" };
   const user = values => ({ sys_id: id("a"), sys_mod_count: "0", sys_class_name: "sys_user",
     user_name: "", first_name: "", last_name: "", name: "", title: "", email: "",
     active: "false", locked_out: "true", notification: "1", identity_type: "human",
@@ -32,6 +32,7 @@ function fixture(t) {
         { sys_mod_count: "1" });
       if (mode.unexpectedActive) rows[0].active = "true";
       if (mode.lostResponse) throw new Error("Synthetic lost response");
+      if (mode.missingResponseIdentity) return Response.json({ result: {} });
       return Response.json({ result: rows[0] });
     }
     let result = [];
@@ -118,7 +119,7 @@ test("profile CRUD preserves policy, current-operator, retention, collisions and
 });
 
 test("lost or rejected user creation and unexpected lifecycle effects remain durable without replay or adoption", async t => {
-  for (const mode of ["lostResponse", "deny", "unexpectedActive"]) {
+  for (const mode of ["lostResponse", "missingResponseIdentity", "deny", "unexpectedActive"]) {
     const f = fixture(t);
     await approve(f);
     f.mode[mode] = true;

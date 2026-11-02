@@ -51,7 +51,9 @@ function createUsers({ source, state, records, incidents, principal }) {
   async function list(table, query, fields, limit = 100) {
     const rows = await source.list(table, query, fields.join(","), limit);
     if (rows.length >= limit || new Set(rows.map(row => row.sys_id)).size !== rows.length ||
-        rows.some(row => !ID.test(row.sys_id) || fields.some(field => !Object.hasOwn(row, field))))
+        rows.some(row => typeof row?.sys_id !== "string" || !ID.test(row.sys_id) ||
+          fields.some(field => !Object.hasOwn(row, field)) ||
+          fields.includes("sys_mod_count") && (typeof row.sys_mod_count !== "string" || !VERSION.test(row.sys_mod_count))))
       throw new Error(`Incomplete or inconsistent user-operation evidence: ${table}.`);
     return rows.map(row => Object.fromEntries(fields.map(field => [field, row[field]])));
   }
@@ -157,7 +159,7 @@ function createUsers({ source, state, records, incidents, principal }) {
       sys_id: before?.sys_id, user_name: creating ? args.user_name : before.user_name, values, before: project(before),
       directory_verified: false, native_effects: creating ? creationEffects : updateEffects, status: "prepared" };
     state.record(intent);
-    let response, row;
+    let response, responseId, row;
     try {
       if (!creating) {
         const current = await get(before.sys_id);
@@ -170,8 +172,9 @@ function createUsers({ source, state, records, incidents, principal }) {
         { sysparm_fields: "sys_id", sysparm_display_value: "false" }, values, before?.sys_id); }
       catch (error) { failure = error; }
       if (response?.result?.sys_id) {
-        if (!ID.test(response.result.sys_id)) throw new Error("Invalid source response identity.");
-        state.record({ ...intent, status: "response", sys_id: response.result.sys_id });
+        if (typeof response.result.sys_id !== "string" || !ID.test(response.result.sys_id)) throw new Error("Invalid source response identity.");
+        responseId = response.result.sys_id;
+        state.record({ ...intent, status: "response", sys_id: responseId });
       }
       if (failure?.diagnostic?.status === 401) throw failure;
       if (creating) {
@@ -180,7 +183,7 @@ function createUsers({ source, state, records, incidents, principal }) {
       } else row = await get(before.sys_id);
       if (row) state.record({ ...intent, status: "observed", sys_id: row.sys_id, observed: project(row) });
       if (failure) throw failure;
-      if (!row || response?.result?.sys_id && response.result.sys_id !== row.sys_id ||
+      if (!row || !responseId || responseId !== row.sys_id ||
           !VERSION.test(row.sys_mod_count) || Object.entries(values).some(([field, value]) => String(row[field]) !== String(value)))
         throw new Error("Requested user fields or response/correlation identity not confirmed.");
       await guardUser(row, evidence.approved);
@@ -203,9 +206,9 @@ function createUsers({ source, state, records, incidents, principal }) {
       return result;
     } catch (error) {
       const outcome = { operation_id: args.operation_id, status: state.isAttempted(args.operation_id) ? "uncertain" : "not_sent",
-        source_write_attempted: state.isAttempted(args.operation_id), sys_id: row?.sys_id || response?.result?.sys_id || before?.sys_id,
+        source_write_attempted: state.isAttempted(args.operation_id), sys_id: row?.sys_id || responseId || before?.sys_id,
         observed: project(row), error: error.message, diagnostic: error.diagnostic, directory_verified: false,
-        retained_created_identity: creating ? response?.result?.sys_id || null : null,
+        retained_created_identity: creating ? responseId || null : null,
         observed_user_identity: row?.sys_id || null,
         source_rejected: error.diagnostic?.status >= 400 && error.diagnostic.status < 500 };
       error.outcome = outcome;
