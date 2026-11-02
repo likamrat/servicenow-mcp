@@ -63,6 +63,55 @@ function createUserAccessInspection({ source, records }) {
     }
     return result;
   }
+  async function unresolvedAclReferences(references, aclLinks, definitions, diagnostic) {
+    const baseFields = ["sys_id", "sys_mod_count", "sys_user_role", "sys_security_acl"];
+    const joinedFields = [...baseFields, "sys_security_acl.name", "sys_security_acl.sys_class_name"];
+    const known = new Map(definitions.map(row => [row.sys_id, row]));
+    const control = aclLinks.find(link => {
+      const definition = known.get(link.sys_security_acl);
+      return definition && typeof definition.name === "string" && definition.name &&
+        typeof definition.sys_class_name === "string" && definition.sys_class_name;
+    });
+    if (!control) throw Object.assign(new Error("Linked ACL definition is absent or unreadable."), { diagnostic });
+    async function native(links, predicate = "") {
+      const result = [];
+      const expected = new Map(links.map(link => [link.sys_id, link]));
+      const ids = [...expected.keys()].sort();
+      for (let start = 0; start < ids.length; start += 50) {
+        const batch = ids.slice(start, start + 50);
+        const found = await rows("sys_security_acl_role",
+          `sys_idIN${batch.join(",")}${predicate ? `^sys_security_acl.sys_id${predicate}` : ""}`, joinedFields);
+        for (const row of found) {
+          const before = expected.get(row.sys_id);
+          if (!batch.includes(row.sys_id) || !before || baseFields.some(field => row[field] !== before[field]) ||
+              typeof row["sys_security_acl.name"] !== "string" || typeof row["sys_security_acl.sys_class_name"] !== "string")
+            throw new Error("Native ACL reference identity/version evidence is inconsistent.");
+        }
+        result.push(...found);
+      }
+      return result.sort((a, b) => a.sys_id.localeCompare(b.sys_id));
+    }
+    const base = await native(references), empty = await native(references, "ISEMPTY");
+    const notEmpty = await native(references, "ISNOTEMPTY");
+    const controlBase = await native([control]), controlEmpty = await native([control], "ISEMPTY");
+    const controlNotEmpty = await native([control], "ISNOTEMPTY");
+    const definition = known.get(control.sys_security_acl);
+    if (base.length !== references.length || fingerprint(base) !== fingerprint(empty) || notEmpty.length !== 0 ||
+        base.some(row => row["sys_security_acl.name"] !== "" || row["sys_security_acl.sys_class_name"] !== "") ||
+        controlBase.length !== 1 || controlEmpty.length !== 0 || fingerprint(controlBase) !== fingerprint(controlNotEmpty) ||
+        controlBase[0]["sys_security_acl.name"] !== definition.name ||
+        controlBase[0]["sys_security_acl.sys_class_name"] !== definition.sys_class_name)
+      throw Object.assign(new Error("Native ACL reference evidence is contradictory or incomplete."), {
+        diagnostic: { ...diagnostic, native_reference_status: "contradictory_or_incomplete" },
+      });
+    return { classification: "source_native_reference_unresolved",
+      references: [...references].sort((a, b) => a.sys_id.localeCompare(b.sys_id)),
+      native_base: base, native_empty: empty, native_not_empty: notEmpty,
+      positive_control: { link: control, definition: {
+        sys_id: definition.sys_id, sys_mod_count: definition.sys_mod_count, name: definition.name, sys_class_name: definition.sys_class_name,
+      }, native_base: controlBase, native_empty: controlEmpty, native_not_empty: controlNotEmpty },
+      meaning: "Exact source-native unresolved references, not physical deletion or universal ACL invisibility proof. Projected reference.sys_id is not used as target existence evidence." };
+  }
   async function inspect({ group_id = null, role_id = null, activate = false }) {
     if (!group_id && !role_id && !activate) throw new Error("Select an existing group, role or explicit activation for review.");
     for (const id of [group_id, role_id]) if (id !== null && !ID.test(id)) throw new Error("Invalid access definition identity.");
@@ -112,21 +161,23 @@ function createUserAccessInspection({ source, records }) {
     const aclIds = [...new Set(aclLinks.map(link => link.sys_security_acl))];
     const aclSchema = await records.discover("sys_security_acl");
     const aclRows = await selectedRows("sys_security_acl", "sys_id", aclIds,
-      ["sys_id", "sys_mod_count", "name", "operation", "type", "active", "admin_overrides",
+      ["sys_id", "sys_mod_count", "sys_class_name", "name", "operation", "type", "active", "admin_overrides",
         "decision_type", "applies_to", "security_attribute", "advanced", "condition", "script"]);
+    let unresolvedReferences = null;
     if (aclRows.length !== aclIds.length) {
       const returned = new Set(aclRows.map(row => row.sys_id));
       const missing = aclIds.filter(id => !returned.has(id)).sort();
       const missingSet = new Set(missing);
       const references = aclLinks.filter(link => missingSet.has(link.sys_security_acl));
-      throw Object.assign(new Error("Linked ACL definition is absent or unreadable."), { diagnostic: {
+      const diagnostic = {
         code: "linked_acl_definition_incomplete", table: "sys_security_acl", lookup: "sys_idIN",
         expected_count: aclIds.length, returned_count: aclRows.length, missing_count: missing.length,
         missing_acl_ids: missing.slice(0, 10), reference_count: references.length,
         references: references.slice(0, 20).map(link => ({
           link_id: link.sys_id, role_id: link.sys_user_role, acl_id: link.sys_security_acl,
         })), truncated: missing.length > 10 || references.length > 20,
-      } });
+      };
+      unresolvedReferences = await unresolvedAclReferences(references, aclLinks, aclRows, diagnostic);
     }
     for (const acl of aclRows) {
       boolean(acl.active); boolean(acl.admin_overrides); boolean(acl.advanced);
@@ -169,10 +220,12 @@ function createUserAccessInspection({ source, records }) {
       contains: edges.sort((a, b) => a.sys_id.localeCompare(b.sys_id)),
       acl_links: aclLinks.sort((a, b) => a.sys_id.localeCompare(b.sys_id)),
       acls: [...acls.values()].sort((a, b) => a.sys_id.localeCompare(b.sys_id)),
-      acl_schema_sha256: fingerprint(aclSchema), security_attributes: securityAttributes, source_policy: sourcePolicy,
+      acl_schema_sha256: fingerprint(aclSchema), security_attributes: securityAttributes,
+      unresolved_acl_references: unresolvedReferences, source_policy: sourcePolicy,
       desired: { group_id, role_id, activate }, direct_roles: directRoles.sort(), inherited_roles: inheritedRoles, native_effects };
     return { ...evidence, evidence_sha256: fingerprint(evidence),
-      policy_requirements: { allow_role_delegation: [...definitions.values()].some(role => boolean(role.can_delegate)) },
+      policy_requirements: { allow_role_delegation: [...definitions.values()].some(role => boolean(role.can_delegate)),
+        allow_unresolved_acl_references: unresolvedReferences !== null },
       delegation_meaning: "allow_role_delegation accepts existing can_delegate role metadata under review; it does not grant role_delegator authority, change a source flag or create delegation.",
       review: "Read-visible closure, ACL links and executable/schema fingerprints are review evidence, not authorization. Review application role checks and native effects too; non-elevated flags alone never establish safe access.",
       coverage: "Bounded complete pages for selected definitions, downward closure and linked ACL/attribute versions, not universal hidden/dynamic privilege or effective grant-permission proof. Native Java/security-attribute implementation semantics still require operator review. No script or condition bodies are returned." };

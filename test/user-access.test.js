@@ -27,17 +27,22 @@ function fixture(t) {
     sys_security_acl_role: [{ sys_id: id(50), sys_mod_count: "0", sys_user_role: id(31), sys_security_acl: id(51) }],
     sys_security_acl: [{ sys_id: id(51), sys_mod_count: "0", name: "incident.read", operation: "read", type: "record",
       active: "true", admin_overrides: "true", decision_type: "allow", applies_to: "", security_attribute: "",
-      advanced: "true", condition: "PRIVATE_CONDITION", script: "PRIVATE_ACL_SCRIPT" }],
+      advanced: "true", condition: "PRIVATE_CONDITION", script: "PRIVATE_ACL_SCRIPT", sys_class_name: "sys_security_acl" }],
     incident: [{ sys_id: id(60), sys_mod_count: "0", number: "INC0000001", short_description: "Synthetic case",
       assigned_to: "", assignment_group: group.sys_id }],
   };
-  const mode = { denyTable: null, loseTable: null, omitExpansion: false, unexpectedRole: false, activateSideEffect: false };
+  const mode = { denyTable: null, loseTable: null, omitExpansion: false, unexpectedRole: false, activateSideEffect: false,
+    hiddenAcl: null, contradictoryJoin: false, omitJoinField: false, corruptJoinVersion: false };
   const requests = [];
   let sequence = 100;
   function matches(row, query) {
     return query.split("^").every(part => {
       if (part.startsWith("ORDERBY")) return true;
       if (part === "sys_updated_on>javascript:gs.monthsAgo(6)") return true;
+      if (part === "sys_security_acl.sys_idISEMPTY" || part === "sys_security_acl.sys_idISNOTEMPTY") {
+        const resolved = tables.sys_security_acl.some(acl => acl.sys_id === row.sys_security_acl);
+        return mode.contradictoryJoin || (part.endsWith("ISNOTEMPTY") ? resolved : !resolved);
+      }
       if (part.includes("ISNOTEMPTY")) return Boolean(row[part.replace("ISNOTEMPTY", "")]);
       const match = /^([\w.]+)(IN|=|>)(.*)$/.exec(part);
       if (!match) throw new Error(`Unhandled synthetic filter ${part}`);
@@ -66,6 +71,8 @@ function fixture(t) {
     const query = url.searchParams.get("sysparm_query") || "";
     const values = options.body ? JSON.parse(options.body) : undefined;
     requests.push({ table, method: options.method, query, recordId, values });
+    if (mode.denyNative && table === "sys_security_acl_role" && query.includes("^sys_security_acl.sys_id"))
+      return Response.json({ error: { message: "Native reference visibility denied" } }, { status: 403 });
     if (options.method !== "GET") {
       if (mode.denyTable === table) return Response.json({ error: { message: "Security constraints deny the requested change" } }, { status: 403 });
       let row;
@@ -92,6 +99,7 @@ function fixture(t) {
         if (mode.activateSideEffect && table === "sys_user") row.locked_out = "false";
       }
       if (mode.loseTable === table) throw new Error("Synthetic response lost");
+      if (mode.afterWrite) mode.afterWrite(table);
       return Response.json({ result: row });
     }
     let rows;
@@ -106,7 +114,19 @@ function fixture(t) {
         action_delete: "false", action_query: "false", filter_condition: "", condition: "", script: "PRIVATE_RULE_BODY",
         sys_overrides: "", role_conditions: "", abort_action: "false", sys_scope: "global", sys_domain: "global" }]
         .filter(row => matches(row, query));
-    } else rows = (tables[table] || []).filter(row => matches(row, query));
+    } else {
+      rows = (tables[table] || []).filter(row => matches(row, query));
+      if (table === "sys_security_acl" && mode.hiddenAcl) rows = rows.filter(row => row.sys_id !== mode.hiddenAcl);
+      if (table === "sys_security_acl_role" && url.searchParams.get("sysparm_fields").includes("sys_security_acl.name"))
+        rows = rows.map(row => {
+          const acl = tables.sys_security_acl.find(acl => acl.sys_id === row.sys_security_acl);
+          return { ...row, ...(mode.corruptJoinVersion ? { sys_mod_count: "999" } : {}),
+            "sys_security_acl.sys_id": row.sys_security_acl,
+            "sys_security_acl.name": acl?.name || "",
+            ...(!mode.omitJoinField ? { "sys_security_acl.sys_class_name": acl?.sys_class_name || "" } : {}),
+          };
+        });
+    }
     const fields = (url.searchParams.get("sysparm_fields") || "").split(",");
     return Response.json({ result: rows.slice(0, Number(url.searchParams.get("sysparm_limit") || 100)).map(row =>
       Object.fromEntries(fields.filter(field => Object.hasOwn(row, field)).map(field => [field, row[field]]))) });
@@ -123,6 +143,7 @@ async function reviewedPolicy(f, { activate = false } = {}) {
     protectedIds: [], protectedNames: ["admin", "guest", "system"],
     policies: [{ key: "support-assignee", group_id: id(20), role_id: id(30), activate, enabled: true,
       allow_role_delegation: false,
+      allow_unresolved_acl_references: false,
       evidence_sha256: review.evidence_sha256, native_effects: review.native_effects,
       direct_origin_values: ["", "not-applicable"] }],
   }));
@@ -218,8 +239,76 @@ test("missing linked ACLs remain a hard failure with bounded reference-only diag
       assert.doesNotMatch(JSON.stringify(error.diagnostic), /PRIVATE_|script|condition|password|token|principal/i);
       return true;
     });
+
     assert.equal(f.writes().length, 0);
     assert.equal(fs.existsSync(path.join(f.directory, "user-access-contract.json")), false);
+  }
+});
+
+test("native unresolved ACL references require exact complementary evidence, a visible control and private opt-in", async t => {
+  const f = fixture(t);
+  const unresolved = { sys_id: id(52), sys_mod_count: "0", sys_user_role: id(31), sys_security_acl: id(53) };
+  f.tables.sys_security_acl_role.push(unresolved);
+  const review = await f.admin.handle("inspect_user_access_policy", { group_id: id(20), role_id: id(30) });
+  assert.equal(review.policy_requirements.allow_unresolved_acl_references, true);
+  assert.equal(review.unresolved_acl_references.references.length, 1);
+  assert.deepEqual(review.unresolved_acl_references.references[0], unresolved);
+  assert.equal(review.unresolved_acl_references.positive_control.link.sys_id, id(50));
+  assert.equal(review.unresolved_acl_references.positive_control.definition.sys_id, id(51));
+  assert.equal(review.unresolved_acl_references.native_empty.length, 1);
+  assert.equal(review.unresolved_acl_references.native_not_empty.length, 0);
+  assert.equal(review.acls.length, 1, "Do not invent the missing definition");
+  await reviewedPolicy(f);
+  await assert.rejects(f.admin.handle("inspect_user_access_policy", { policy: "support-assignee" }), /unresolved.*explicit reviewed/);
+  const file = path.join(f.directory, "user-access-contract.json"), policy = JSON.parse(fs.readFileSync(file, "utf8"));
+  policy.policies[0].allow_unresolved_acl_references = true;
+  fs.writeFileSync(file, JSON.stringify(policy));
+  assert.equal((await f.admin.handle("inspect_user_access_policy", { policy: "support-assignee" })).policy_available, true);
+  for (const failure of ["contradictoryJoin", "omitJoinField", "corruptJoinVersion", "denyNative"]) {
+    f.mode[failure] = true;
+    await assert.rejects(f.admin.handle("inspect_user_access_policy", { policy: "support-assignee" }));
+    f.mode[failure] = false;
+  }
+  for (const [row, field, value] of [
+    [unresolved, "sys_mod_count", "1"],
+    [f.tables.sys_security_acl[0], "name", "changed.control.name"],
+  ]) {
+    const before = row[field]; row[field] = value;
+    await assert.rejects(f.admin.handle("inspect_user_access_policy", { policy: "support-assignee" }), /policy changed/);
+    row[field] = before;
+  }
+  f.tables.sys_security_acl.push({ ...f.tables.sys_security_acl[0], sys_id: id(53), name: "different.acl" });
+  await assert.rejects(f.admin.handle("inspect_user_access_policy", { policy: "support-assignee" }), /policy changed/);
+  f.mode.hiddenAcl = id(53);
+  await assert.rejects(f.admin.handle("inspect_user_access_policy", { policy: "support-assignee" }), /absent or unreadable|reference/);
+  assert.equal(f.writes().length, 0);
+});
+
+test("accepted unresolved-reference policy is rechecked between mutation stages", async t => {
+  for (const drift of [false, true]) {
+    const f = fixture(t);
+    const unresolved = { sys_id: id(52), sys_mod_count: "0", sys_user_role: id(31), sys_security_acl: id(53) };
+    f.tables.sys_security_acl_role.push(unresolved);
+    await reviewedPolicy(f);
+    const file = path.join(f.directory, "user-access-contract.json"), policy = JSON.parse(fs.readFileSync(file, "utf8"));
+    policy.policies[0].allow_unresolved_acl_references = true;
+    fs.writeFileSync(file, JSON.stringify(policy));
+    f.tables.sys_user.push(f.user(2, "runtime-new-person"));
+    const assessment = await f.admin.handle("assess_user_access", { sys_id: id(2), policy: "support-assignee" }, "caller-a");
+    if (drift) f.mode.afterWrite = table => { if (table === "sys_user_grmember") unresolved.sys_mod_count = "1"; };
+    const operation_id = randomUUID();
+    const operation = f.admin.handle("apply_user_access", { sys_id: id(2), assessment_id: assessment.assessment_id,
+      operation_id, acknowledged_native_effects: assessment.native_effects }, "caller-a");
+    if (drift) {
+      await assert.rejects(operation, error => error.outcome.status === "uncertain" && error.outcome.partial === true);
+      assert.deepEqual(f.writes().map(row => row.table), ["sys_user_grmember"]);
+      const result = await f.restart().handle("get_user_access_operation", { operation_id }, "caller-a");
+      assert.equal(result.unresolved_hold, true);
+      assert.equal(result.outcome.stages[0].status, "confirmed");
+    } else {
+      assert.equal((await operation).status, "confirmed");
+      assert.deepEqual(f.writes().map(row => row.table), ["sys_user_grmember", "sys_user_has_role"]);
+    }
   }
 });
 

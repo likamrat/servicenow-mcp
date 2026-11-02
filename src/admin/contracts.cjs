@@ -3,7 +3,7 @@ const path = require("node:path");
 const { validate } = require("./validate.cjs");
 const id = { type: "string", pattern: "^[a-f0-9]{32}$" };
 const sha = { type: "string", pattern: "^[a-f0-9]{64}$" };
-const object = properties => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
+const object = (properties, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
 const versions = { type: "array", items: object({ sys_id: id, sys_mod_count: { type: "string", pattern: "^\\d+$" } }) };
 const accessTables = ["sys_user_group", "sys_user_role", "sys_user_has_role", "sys_group_has_role", "sys_user_role_contains", "sys_user_grmember"];
 const schemas = {
@@ -16,9 +16,11 @@ const schemas = {
       group_id: { type: ["string", "null"], pattern: "^[a-f0-9]{32}$" },
       role_id: { type: ["string", "null"], pattern: "^[a-f0-9]{32}$" },
       activate: { type: "boolean" }, enabled: { type: "boolean" }, allow_role_delegation: { type: "boolean" }, evidence_sha256: sha,
+      allow_unresolved_acl_references: { type: "boolean" },
       native_effects: { type: "array", uniqueItems: true, items: { type: "string", maxLength: 100 } },
       direct_origin_values: { type: "array", minItems: 1, maxItems: 10, uniqueItems: true, items: { type: "string", maxLength: 100 } },
-    }) },
+    }, ["key", "group_id", "role_id", "activate", "enabled", "allow_role_delegation", "evidence_sha256",
+      "native_effects", "direct_origin_values"]) },
   }),
   "user-profile": object({ format: { const: 1 }, instance: { type: "string" },
     schema_sha256: sha, rules_sha256: sha, sourceEvidenceSha256: sha,

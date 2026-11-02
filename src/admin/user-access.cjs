@@ -42,6 +42,8 @@ function createUserAccess({ source, state, records, principal, now = Date.now })
     const selected = approved.policies.find(item => item.key === policyKey);
     if (!selected || !selected.enabled) throw new Error("User access policy is absent or disabled; no grant permitted.");
     const evidence = await inspection.inspect(selected);
+    if (evidence.policy_requirements.allow_unresolved_acl_references && !selected.allow_unresolved_acl_references)
+      throw new Error("Source-native unresolved ACL references require explicit reviewed policy permission; no grant permitted.");
     if (evidence.policy_requirements.allow_role_delegation && !selected.allow_role_delegation)
       throw new Error("Role delegation eligibility requires explicit reviewed policy permission; no grant permitted.");
     if (evidence.evidence_sha256 !== selected.evidence_sha256 ||
@@ -254,8 +256,9 @@ function createUserAccess({ source, state, records, principal, now = Date.now })
         return { ...result.evidence, policy: args.policy, policy_available: true,
           caller_scope_required: "User.Access.Manage", source_user_required: false };
       }
-      if (!Object.keys(args).length) return { policies: contract().policies.map(({ key, group_id, role_id, activate, enabled, allow_role_delegation }) =>
-        ({ key, group_id, role_id, activate, enabled, allow_role_delegation })), policy_available: false,
+      if (!Object.keys(args).length) return { policies: contract().policies.map(({ key, group_id, role_id, activate, enabled,
+        allow_role_delegation, allow_unresolved_acl_references }) =>
+        ({ key, group_id, role_id, activate, enabled, allow_role_delegation, allow_unresolved_acl_references })), policy_available: false,
         meaning: "Inspect one key to verify its live evidence before creating a user. Listing is not policy qualification." };
       return { ...await inspection.inspect(args), policy_available: false, caller_scope_required: "User.Access.Manage" };
     }

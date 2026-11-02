@@ -405,6 +405,7 @@ No access continuation is enabled by default. Install a reviewed
       "activate": false,
       "enabled": false,
       "allow_role_delegation": false,
+      "allow_unresolved_acl_references": false,
       "evidence_sha256": "<reviewed inspect_user_access_policy fingerprint>",
       "native_effects": ["<exact effects returned by inspection>"],
       "direct_origin_values": ["<reviewed native direct-grant origin value>"]
@@ -430,13 +431,33 @@ neither the fingerprint nor non-elevated flags establish absence of privilege.
 The runtime rechecks the evidence before assessment and before each source stage.
 Identity queries are bounded and batched, not unbounded user inventories.
 
-If linked ACL definitions are missing from the result, inspection still fails
-closed with `linked_acl_definition_incomplete`. Its diagnostic includes counts,
-at most ten missing ACL IDs and twenty referring link/role IDs, plus an explicit
-truncation flag. It includes no script, condition or credential content. Use
-that bounded evidence for authorized exact-reference/visibility diagnosis; it
-does not classify the target as deleted, authorize bypassing ACLs or permit a
-partial fingerprint to become policy.
+If linked ACL definitions are missing, an empty direct lookup alone never
+qualifies a policy. Inspection can classify an exact link as
+`source_native_reference_unresolved` only with complete, complementary native
+reference evidence: every original link/role/target/version matches its base
+read and joined-ID `ISEMPTY` read, the joined-ID `ISNOTEMPTY` read returns none,
+and target name/class are explicitly empty. A known-visible control from the
+already-read definition set must match its target name/class and show the
+opposite native predicate results. Queries are constrained to the already-read
+closure link IDs; unrelated links are not admitted. Projected reference
+`sys_id` may echo the raw target ID and is never used as existence proof.
+
+Without this evidence and a working positive control, missing definitions still
+fail closed with `linked_acl_definition_incomplete` or a precise source/evidence
+error. The bounded diagnostic includes counts, at most ten missing ACL IDs and
+twenty referring link/role IDs, plus truncation; no bodies or credentials.
+Contradictions, changed versions, missing fields, access failures and incomplete
+coverage always stop qualification. There is no blind fallback/retry, privilege
+elevation or source-link cleanup.
+
+The exact unresolved links, complementary native rows and visible control are
+retained in `unresolved_acl_references` and the policy fingerprint. This is not a
+claim of physical deletion, universal visibility or absence of privilege. An
+operator may accept **only that exact reviewed source-native classification**
+with `allow_unresolved_acl_references: true`; omitted/false stays closed. The
+runtime rechecks the same evidence before every access stage. A definition
+becoming visible, changing linkage or a failed control invalidates the approved
+fingerprint. No inaccessible ACL is silently discarded or invented.
 
 Administrative/elevated/scoped-admin or restricted-grantor roles are not
 supported, even through a containing role. Parented or externally managed
