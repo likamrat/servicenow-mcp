@@ -124,10 +124,11 @@ is available as `npm run start:stdio`.
 
 ## Cowork authenticated server
 
-Cowork uses one authenticated connector to the shared backend. It exposes the
-four existing six-month incident/change reads plus incident schema discovery,
+Cowork uses one authenticated connector to the shared backend. Its catalog has
+the four existing six-month incident/change reads plus incident schema discovery,
 exact assignee resolution, create/update/delete and requester-owned operation
-status. It does not expose generic table or account administration. The source
+status, and eight generic user CRUD tools. It does not expose arbitrary table,
+credential, role/group or theme administration. The source
 account, credentials and operation state use the existing protected binding
 above; there is no separate assignment service or identity map.
 
@@ -143,12 +144,20 @@ Register or reuse an explicitly approved Entra resource API and OAuth client.
 Do not substitute a Graph or Work IQ audience, an ID token, or an app-only
 token. The protected resource verifies RS256, the tenant-specific v2 issuer,
 expiry/not-before/issued-at, `tid`, exact resource application GUID `aud`,
-authorized client application GUID `azp`, delegated `scp=Incident.Manage`, and
-an immutable requester `oid`. It has no person or incident allowlist.
+authorized client application GUID `azp`, an immutable requester `oid`, and at
+least one supported delegated scope. `Incident.Manage` admits the ten existing
+incident/change tools. `User.Manage` admits the eight user CRUD tools. Both scopes
+admit the combined eighteen-tool catalog. Listing and dispatch enforce the
+same separation; an incident-only token cannot manage users. There is no person
+or incident allowlist.
 
 The resource API must issue v2 access tokens (`requestedAccessTokenVersion: 2`).
-Request `api://<resource-application-id>/Incident.Manage` and the refresh scope
-required by the client. Configure the client's approved callback and consent
+Request only the resource permissions required by the client:
+`api://<resource-application-id>/Incident.Manage` and/or
+`api://<resource-application-id>/User.Manage`, plus its required refresh scope.
+Adding `User.Manage` requires an explicitly approved resource permission/client
+consent change; existing incident consent is not expanded by installing code.
+Configure the client's approved callback and consent
 through its supported registration flow. Cowork uses `OAuthPluginVault`; its
 `referenceId` is the Microsoft token-store registration ID, not an Entra app ID.
 Client secrets belong in the approved token store, never in this checkout or
@@ -179,7 +188,7 @@ responses and raw error text are never included.
 
 `outcome` is `success`, `error` or `not_dispatched`. Status is a bounded label:
 `completed`, `confirmed`, `no_change`, `uncertain`, `not_sent`, `failed`,
-`writes_disabled` or `tool_unavailable`. For an operation-status read, its
+`writes_disabled`, `scope_required` or `tool_unavailable`. For an operation-status read, its
 status can describe the earlier operation; it does not mean a new write ran.
 Authentication failures, discovery calls and notifications do not emit
 verified-caller events. An interrupted call may have no completion line;
@@ -253,6 +262,112 @@ An error response, changed group, partial readback or lost response retains
 the original evidence and an uncertainty hold. Use `get_incident_operation`;
 do not retry under the same or a new operation UUID or automatically change
 source permissions to force success.
+
+## Generic user CRUD
+
+These tools run in the same backend for native stdio and authenticated HTTP.
+Any agent may obtain name/email context through its separately authorized Work IQ,
+directory or other source, then call the MCP. The MCP does not contact Graph or
+Work IQ, verify directory claims, adopt a Microsoft identity, or accept a
+`directory_verified` flag. Its outcomes explicitly report
+`directory_verified: false`. Source profile data and actual caller authentication
+are different kinds of evidence.
+
+| Tool | Purpose |
+|---|---|
+| `get_user_schema` | Source fields supported by this profile path and fingerprints for operator policy review; not permission. |
+| `lookup_users` | Exact name/first-name/login/email lookup with unique/ambiguous/not_found/incomplete outcomes; no mandatory email input. |
+| `get_user` | Exact source user/version and ordinary contact/status projection. |
+| `create_user` | Source-valid login plus first/last name, title and optional email. Explicit inactive, locked, notification-disabled human creation; no password or access input. |
+| `update_user` | Only supplied first/last name, title or email, guarded by current source version. Login, lifecycle, credentials and roles are not profile fields. |
+| `assess_user_delete` | Current native deletion impact, target/version, related effects and caller-bound assessment. |
+| `delete_user` | Existing native administrative delete path with that assessment, fresh version/impact hash, confirmation and all declared native-effect acknowledgments. |
+| `get_user_operation` | Caller-owned receipt/current observation; no replay or cleanup claims. |
+
+An existing username or email collision is not adoption permission. Lookup first,
+inspect candidates and use an unambiguous existing account for an authorized
+operation; never create a duplicate or attach an external identity automatically.
+Creation requires native source username uniqueness plus an operator review of
+query visibility, since empty ACL-filtered results alone cannot establish
+absence. Email is not assumed to have a source uniqueness constraint. Collision
+checks and version guards are preflights, not atomic CAS against other writers.
+The source's real field lengths apply, including usernames that contain `@`;
+the agent must choose a source-valid login rather than truncate an email.
+
+### Reviewed ordinary-profile policy
+
+Create/update are unavailable until a qualified operator installs a
+`user-profile-contract.json` in the existing private state directory:
+
+```json
+{
+  "format": 1,
+  "instance": "https://your-instance.service-now.com",
+  "schema_sha256": "<reviewed full inherited sys_user schema fingerprint>",
+  "rules_sha256": "<reviewed inherited active user-rule identity/version fingerprint>",
+  "sourceEvidenceSha256": "<private review evidence SHA256>",
+  "protectedIds": [],
+  "protectedNames": ["admin", "guest", "system"],
+  "absence_visibility_reviewed": true
+}
+```
+
+`get_user_schema` supplies fingerprint inputs; **do not automatically turn those
+values into approval**. Review actual mandatory/default/unique behavior, source
+query visibility and native create/update effects first. The fingerprints are
+compared on each write, and native `user_name` uniqueness is rechecked. The
+existing account/access contracts and their older tools are not relaxed or
+relabelled; this separate policy authorizes the ordinary contact/profile path.
+The current source operator, named/ID-protected users and retention holds remain
+protected. External/provider-managed and service/unknown identities are not
+ordinary profile-update targets.
+
+Creation explicitly overrides unsafe-for-this-path lifecycle defaults with
+`active=false`, `locked_out=true`, `notification="1"`, `identity_type="human"`,
+`internal_integration_user=false` and `web_service_access_only=false`. It supplies
+no password, login enrollment or access values. Native rules may still create an
+active primary Email notification-device child and an identity hash; do not
+silently remove either. Email updates can synchronize all native primary devices,
+name updates can synchronize live profiles, and any update to a locked account
+can invoke session/OAuth revocation hooks. Requested fields/status are read back;
+native child/notification effects are disclosed, not claimed universally verified.
+
+User deletion retains the existing broader administrative semantics: active,
+contact-bearing and role/group-linked users are not automatically excluded.
+Current-operator/retention and related native-cascade protection, ordered impact
+pagination, fresh versions/hash and exact acknowledgments still apply. Deletion
+does not remove roles first, reassign work or manually delete children.
+`cleanup_complete` stays false, independently of confirmed parent absence.
+
+All writes durably record intent/attempt before dispatch and preserve source
+response identities and partial observations. An uncertain create is not retried
+with a different UUID or caller. If the response was lost, a later matching
+account is recorded as observed, not falsely attributed as a confirmed creation.
+Caller-owned recovery survives restart; shared holds prevent cross-caller replay.
+
+### Agent-composed onboarding is not yet automatic access provisioning
+
+The intended sequence is agent-side context lookup, exact source lookup, generic
+creation only when authorized absence is established, then separately qualified
+assignee eligibility and a fresh guarded incident update using the source sys_id.
+Never put an email string into `assigned_to`.
+
+`create_user` returns `assignee_readiness: "not_evaluated"`. It grants no role or
+group membership and does not activate/unlock the account. A source reference
+qualifier may require memberships or ACL-bearing roles; a human identity and
+successful creation do not satisfy those requirements. Do not invent an
+active-user prerequisite when the actual qualifier does not contain one.
+
+The existing native access tools are limited to their reviewed managed
+nonprivileged definitions. They are **not** a general grant mechanism for an
+existing ACL-bearing incident role or an active assignment group. If eligibility
+requires such a grant, the remaining capability is a separately reviewed,
+explicitly authorized access/lifecycle continuation covering the actual role
+closure and native effects. Stop with the retained account identity and that
+precise gate; do not use profile fields, automatic activation, arbitrary grants,
+manual pre-provisioning or a source-policy change to manufacture assignment
+success. Generic user CRUD delivery is not proof of complete just-in-time
+assignment through the client.
 
 ## Cowork read-only server
 

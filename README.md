@@ -15,13 +15,13 @@ interface for Microsoft Copilot Cowork over the same backend.
 | Area | Operations |
 |---|---|
 | Records | Discover schemas; query, read, create, update and delete incidents, knowledge bases and articles. |
-| Users | Read profiles, create disabled accounts, update profiles, activate, lock, unlock, and assess or delete users. |
+| Users | Look up exact identities; read, create and update ordinary profiles including email; assess and delete users with impact guards. Native administrative tools additionally support explicit lifecycle actions. |
 | Access | Create managed nonprivileged groups and roles; update descriptions and direct assignments. |
 | Themes | Edit and restore draft primary colors and corner radius; import, apply and remove PNG-logo links. |
 | Incident and change lookup | Search recent incidents and changes, or read a ticket by number. |
 | Cowork incident management | Create, update and delete incidents; resolve exact assignees and assign, reassign or clear ownership. |
 
-Account lifecycle, access changes and new PNG imports require reviewed source
+User profile creation/update, account lifecycle, access changes and new PNG imports require reviewed source
 policies. ServiceNow permissions still apply to every operation. See the
 [tool reference](CAPABILITIES.md) for tool names, prerequisites and limits.
 
@@ -38,10 +38,21 @@ flowchart LR
 
 GitHub Copilot uses the stdio interface for records and administration.
 [ServiceNow for Cowork](https://github.com/likamrat/servicenow-cowork-plugin)
-uses a restricted authenticated HTTP interface: four incident/change lookup
-tools and six incident schema, identity, CRUD and operation-status tools.
-Both clients use the same record guards and private operation journal; Cowork
-does not expose account, access or theme administration.
+uses the authenticated HTTP interface. Its eighteen-tool catalog includes the
+ten incident/change tools and eight generic user CRUD tools. Discovery exposes
+only tools covered by the caller's verified delegated scopes: `Incident.Manage`
+or `User.Manage`. Both clients use the same backend and private operation
+journal. Generic user CRUD is usable by any supported MCP agent; it is not
+coupled to Cowork, Work IQ or a directory login implementation.
+
+The agent can discover a person's context through its authorized directory tools,
+then look up or create a ServiceNow user and use the exact returned `sys_id` for
+incident assignment. Directory attributes are request data, not a backend-verified
+cross-system identity. Creation is inactive, locked and notification-disabled
+without credentials or access grants. **Creation alone does not establish
+assignee readiness.** Required lifecycle, membership or role changes need their
+own supported, separately authorized path; the remote CRUD interface does not
+expose arbitrary access or theme administration.
 
 ## Get started
 
@@ -75,8 +86,8 @@ Follow SETUP.md to connect ServiceNow MCP to my chosen client.
 Check the prerequisites and use my existing credential setup; do not enroll
 credentials or put secrets in repository files or command arguments.
 For the GitHub Copilot app, configure the documented nonsecret provider binding.
-For Cowork, use the authenticated restricted incident interface and explain
-the required resource scope, OAuth client registration and source permissions.
+For remote clients, use the authenticated interface and explain the separate
+Incident.Manage/User.Manage scopes, OAuth registration and source-policy requirements.
 Start with writes disabled; do not expose the legacy anonymous interface.
 Ask before installation, access changes or ServiceNow writes.
 Verify the connection with a read-only request from the chosen client.

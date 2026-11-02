@@ -58,6 +58,13 @@ predecessor assignment-only proposal's incident/person maps and fixed reference
 policy are not part of this interface. The thin clients do not own another
 ServiceNow backend or a token store.
 
+Generic user CRUD adds a separate reviewed ordinary-profile/contact path over
+the same source/state/schema helpers. User deletion reuses the existing native
+administrative impact/deletion adapter. Directory attributes remain agent-supplied
+request data; no Graph/Work IQ client or authentication dependency was added.
+`User.Manage` is a separate remote delegated permission, not an expansion of
+existing incident-only consent.
+
 The optional HTTP entrypoints additionally use Express; authenticated Cowork
 uses `jose` for standard JWT/JWKS verification. Exact
 versions, package registry URLs and integrity digests are retained in

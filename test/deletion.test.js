@@ -12,7 +12,8 @@ function fixture(t) {
   const id = "a".repeat(32), operator = "b".repeat(32);
   const user = { sys_id: id, user_name: "existing-active-user", first_name: "Example", last_name: "", title: "",
     active: "true", locked_out: "false", notification: "2", sys_class_name: "sys_user", identity_type: "human",
-    internal_integration_user: "false", web_service_access_only: "false", sys_mod_count: "4" };
+    internal_integration_user: "false", web_service_access_only: "false", sys_mod_count: "4",
+    user_password: "PRIVATE_PASSWORD_MUST_NOT_RETURN" };
   let present = true, deny = false, writes = 0;
   const children = Array.from({ length: 101 }, (_, index) => ({
     sys_id: (index + 1).toString(16).padStart(32, "0"), sys_mod_count: "", user: id,
@@ -83,5 +84,24 @@ test("source denial retains uncertainty and blocks a different-UUID deletion rep
     operation_id: randomUUID(), confirm: true, acknowledged_native_effects: impact.native_effects_declared };
   await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", args), error => error.outcome.status === "uncertain");
   await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", { ...args, operation_id: randomUUID() }), /unresolved/);
+  assert.equal(f.writes(), 1);
+});
+
+test("generic user deletion reuses native impact guards with a caller-bound assessment and durable receipt", async t => {
+  const f = fixture(t);
+  const impact = await f.admin.handle("assess_user_delete", { sys_id: f.id }, "caller-a");
+  const args = { sys_id: f.id, expected_mod_count: "4", expected_impact_sha256: impact.impact_sha256,
+    assessment_id: impact.assessment_id, operation_id: randomUUID(), confirm: true,
+    acknowledged_native_effects: impact.native_effects_declared };
+  await assert.rejects(f.admin.handle("delete_user", args, "caller-b"), /assessment.*caller/);
+  assert.equal(f.writes(), 0);
+  const deleted = await f.admin.handle("delete_user", args, "caller-a");
+  assert.equal(deleted.parent_absent, true);
+  assert.equal(deleted.cleanup_complete, false);
+  assert.equal(deleted.native_observations.length, 101);
+  assert.doesNotMatch(JSON.stringify({ impact, deleted }), /PRIVATE_PASSWORD|user_password/);
+  assert.equal((await f.admin.handle("get_user_operation", { operation_id: args.operation_id }, "caller-a")).status, "confirmed");
+  await assert.rejects(f.admin.handle("get_user_operation", { operation_id: args.operation_id }, "caller-b"), /not available/);
+  await assert.rejects(f.admin.handle("delete_user", args, "caller-a"), /already attempted/);
   assert.equal(f.writes(), 1);
 });

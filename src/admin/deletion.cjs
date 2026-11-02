@@ -21,7 +21,7 @@ function createDeletion({ source, state, principal }) {
           !/^\d+$/.test(row.sys_mod_count) && !(options.allowEmptyChildVersion && row.sys_mod_count === "")))
         throw new Error("Invalid deletion evidence version:" + table);
     }
-    return found;
+    return found.map(row => Object.fromEntries(fields.split(",").map(field => [field, row[field]])));
   }
   async function handle(name, args) {
     const impact = createAdministrativeImpact({ rows, principal, retainedIds: state.retainedIds(), references });

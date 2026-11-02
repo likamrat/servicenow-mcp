@@ -51,7 +51,9 @@ test("declared stdio entrypoint works without npm dependencies when explicitly g
   assert.equal(messages[0].result.serverInfo.version, "1.0.0");
   const names = messages[1].result.tools.map(tool => tool.name);
   for (const name of ["local_record_create", "local_admin_user_delete_administrative", "local_admin_patch_theme_style_pair",
-    "local_admin_apply_theme_logo", "local_admin_user_create_disabled", "local_admin_import_theme_logo"]) assert.ok(names.includes(name), name);
+    "local_admin_apply_theme_logo", "local_admin_user_create_disabled", "local_admin_import_theme_logo",
+    "lookup_users", "get_user", "create_user", "update_user", "assess_user_delete", "delete_user", "get_user_operation"])
+    assert.ok(names.includes(name), name);
   assert.deepEqual(JSON.parse(messages[2].result.content[0].text), []);
   const user = JSON.parse(messages[3].result.content[0].text);
   assert.equal(user.record.sys_id, id);

@@ -20,7 +20,7 @@ test("Entra verification requires the delegated resource/client scope without a 
     .setAudience(settings.audience || audience).setIssuedAt(settings.iat ?? now).setNotBefore(settings.nbf ?? now)
     .setExpirationTime(settings.exp ?? now + 600).sign(settings.key || privateKey);
   const verify = await createEntraVerifier(profile, { key: publicKey });
-  assert.deepEqual(await verify(await sign({})), { tenant_id: tenant, object_id: oid, client_id: client });
+  assert.deepEqual(await verify(await sign({})), { tenant_id: tenant, object_id: oid, client_id: client, scopes: [SCOPE] });
   const another = "55555555-5555-4555-8555-555555555555";
   assert.equal((await verify(await sign({ oid: another }))).object_id, another);
   for (const claims of [
@@ -45,7 +45,7 @@ test("the authenticated interface gates all ten tools and exposes only protected
   const server = createCoworkApp({ profile, backend: { handle: async (...args) => { calls.push(args); return {}; } },
     verifyAccessToken: async token => {
       if (token !== "synthetic") throw new CoworkAuthError(401, "invalid_token");
-      return { tenant_id: tenant, object_id: oid, client_id: client };
+      return { tenant_id: tenant, object_id: oid, client_id: client, scopes: [SCOPE] };
     },
   }).listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -56,7 +56,7 @@ test("the authenticated interface gates all ten tools and exposes only protected
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
   const metadata = await (await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`)).json();
-  assert.deepEqual(metadata.scopes_supported, [`api://${audience}/Incident.Manage`]);
+  assert.deepEqual(metadata.scopes_supported, [`api://${audience}/Incident.Manage`, `api://${audience}/User.Manage`]);
   assert.equal(metadata.resource, profile.public_url);
   assert.deepEqual(metadata.authorization_servers, [`https://login.microsoftonline.com/${tenant}/v2.0`]);
   for (const method of ["initialize", "tools/list", "tools/call"]) {
@@ -65,8 +65,8 @@ test("the authenticated interface gates all ten tools and exposes only protected
     assert.match(denied.headers.get("WWW-Authenticate"), /oauth-protected-resource\/mcp/);
   }
   const listed = await (await rpc("tools/list")).json();
-  assert.deepEqual(listed.result.tools, tools);
-  assert.equal(tools.length, 10);
+  assert.deepEqual(listed.result.tools, tools.slice(0, 10));
+  assert.equal(tools.length, 18);
   const read = await (await rpc("tools/call", { name: "get_incident", arguments: { number: "INC0000001" } })).json();
   assert.notEqual(read.result.isError, true);
   assert.deepEqual(calls, [["get_incident", { number: "INC0000001" }, `${tenant}:${oid}:${client}`]]);
@@ -153,7 +153,7 @@ test("audit is off by default, records disabled-write rejection when enabled and
       ...(mode === "default" ? {} : { audit_enabled: mode !== "disabled" }) };
     const server = createCoworkApp({ profile: config,
       backend: { handle: async () => { calls++; return { status: "confirmed", operation_id: "PRIVATE_OPERATION" }; } },
-      verifyAccessToken: async () => ({ tenant_id: tenant, object_id: oid, client_id: client }),
+      verifyAccessToken: async () => ({ tenant_id: tenant, object_id: oid, client_id: client, scopes: [SCOPE] }),
       writeAudit: line => {
         if (mode === "output_failure") throw new Error("PRIVATE_SINK_ERROR");
         audit.push(line);
@@ -194,7 +194,7 @@ test("the default audit destination emits one bounded JSON line on stderr and le
     const { createCoworkApp } = require(${JSON.stringify(require.resolve("../src/cowork-http.cjs"))});
     const server = createCoworkApp({
       profile: ${JSON.stringify({ ...profile, audit_enabled: true })},
-      verifyAccessToken: async () => (${JSON.stringify({ tenant_id: tenant, object_id: oid, client_id: client })}),
+      verifyAccessToken: async () => (${JSON.stringify({ tenant_id: tenant, object_id: oid, client_id: client, scopes: [SCOPE] })}),
       backend: { handle: async () => ({ record: "PRIVATE_SOURCE_BODY" }) },
     }).listen(0, "127.0.0.1", async () => {
       try {

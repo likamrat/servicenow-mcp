@@ -288,6 +288,282 @@
         ],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "get_user_schema",
+      "description": "Discover source user schema and supported ordinary profile fields plus source-policy fingerprints. Discovery is not approval or effective ACL permission. Generic user CRUD is independent of the agent's directory/context provider.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "lookup_users",
+      "description": "Find exact source users by login, email, display name or first name. Without field, union exact matches; never pick the first ambiguous or incomplete candidate. Inputs from Work IQ or another agent are request data, not backend-verified directory identity. Does not create, adopt or map accounts.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "sys_id",
+              "user_name",
+              "email",
+              "name",
+              "first_name"
+            ]
+          }
+        },
+        "required": [
+          "identity"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_user",
+      "description": "Read one exact ServiceNow user and version with ordinary name/contact/status fields. No passwords, tokens, credential hashes or role export.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          }
+        },
+        "required": [
+          "sys_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_user",
+      "description": "Create a source human user with supplied login and ordinary profile including optional discovered email. Requires reviewed source visibility/schema/hooks and native username uniqueness; existing login/email is a collision, never silent adoption. Creates explicitly inactive, locked and notification-disabled without password, roles, group membership, activation or SSO enrollment. Normal source hooks may create a primary notification device and identity hash. Supplied directory context is not verified by this backend. Retain operation UUID and created identity on partial failure; never replay uncertain creation.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "last_name": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 255
+              }
+            },
+            "required": [],
+            "additionalProperties": false,
+            "minProperties": 1
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "user_name",
+          "profile",
+          "operation_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_user",
+      "description": "Update only supplied first_name, last_name, title or email after exact user/version, protected-identity and reviewed source-policy checks. Does not rename login, adopt an external account, change lifecycle/password/access or bypass source ACLs. Normal name/device synchronization and locked-account revocation hooks may run. Preflight is not atomic CAS; preserve uncertain outcomes and never replay.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "expected_mod_count": {
+            "type": "string",
+            "pattern": "^\\d+$"
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "last_name": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 255
+              }
+            },
+            "required": [],
+            "additionalProperties": false,
+            "minProperties": 1
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "sys_id",
+          "expected_mod_count",
+          "profile",
+          "operation_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "assess_user_delete",
+      "description": "Assess exact user deletion impact using native relationship/version/cascade discovery and current-operator/retention protection. Returns a caller-bound assessment ID and disclosed native effects. It is not consent or DELETE permission.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          }
+        },
+        "required": [
+          "sys_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_user",
+      "description": "Delete the exact explicitly authorized user from a current caller-bound impact assessment. Rechecks target version, relationships and native effects; protects current operator and retention holds. No role stripping, direct child cleanup or force. Parent absence is separate from cleanup_complete=false and retained/unknown effects. Never replay an uncertain operation.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sys_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "expected_mod_count": {
+            "type": "string",
+            "pattern": "^\\d+$"
+          },
+          "expected_impact_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "operation_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true
+          },
+          "acknowledged_native_effects": {
+            "type": "array",
+            "uniqueItems": true,
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "type": "string",
+              "enum": [
+                "primary-device-cascade-and-parent-hook",
+                "exact-user-profile/channel/filter/preference-cleanup",
+                "exact-user-session-invalidation",
+                "native-reference-delete-clear-retain-or-restrict",
+                "conditional-native-hooks-and-unenumerated-effects"
+              ]
+            }
+          },
+          "assessment_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "sys_id",
+          "expected_mod_count",
+          "expected_impact_sha256",
+          "operation_id",
+          "confirm",
+          "acknowledged_native_effects",
+          "assessment_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_user_operation",
+      "description": "Read only this authenticated caller's original user-operation receipt and current source observation when available. Retains created identity and partial/uncertain evidence without replay, attribution upgrade or hold removal.",
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "operation_id"
+        ],
+        "additionalProperties": false
+      }
     }
   ]
 }

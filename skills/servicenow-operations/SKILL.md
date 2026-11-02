@@ -58,6 +58,24 @@ clear it. Preserve the current incident version and operation UUID. Inspect
 `get_incident_operation` after uncertainty; do not retry. These tools do not
 provision users, grant access or prove reference-list eligibility.
 
+For user CRUD, discover `get_user_schema`, `lookup_users`, `get_user`,
+`create_user`, `update_user`, `assess_user_delete`, `delete_user` and
+`get_user_operation` when the connected interface exposes them. Directory/Work IQ
+context belongs to the agent's authorized source workflow; do not require the
+user to supply an email if it can be discovered there, and never cross an explicit
+source restriction. Supplied profile data is not backend-verified directory
+identity. Existing-account collisions are not adoption permission.
+
+Ordinary profile CRUD excludes credentials, login/status and role/group values.
+Creation is inactive, locked and notification-disabled and reports assignee
+readiness as not evaluated. Retain that identity if later eligibility or
+assignment is blocked. Do not activate or grant ACL-bearing roles through a
+profile-field workaround: use an actually supported, separately authorized
+access/lifecycle path or report the exact missing gate. For deletion, retain the
+caller-bound assessment and all native effects, version/hash and confirmation
+requirements. Recover uncertain writes through the original user-operation ID,
+never a new caller or UUID.
+
 For UI work, use the host's browser/app guidance and compare the intended
 instance and target with the source identity. UI is not a workaround for a
 source denial. For themes or branding, use `servicenow-themes` for surface

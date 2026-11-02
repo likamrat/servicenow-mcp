@@ -1,5 +1,7 @@
 const { validate } = require("./admin/validate.cjs");
 const SCOPE = "Incident.Manage";
+const USER_SCOPE = "User.Manage";
+const MANAGEMENT_SCOPES = [SCOPE, USER_SCOPE];
 const guid = { type: "string", pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$" };
 const authProperties = { tenant_id: guid, audience: guid, client_id: guid };
 
@@ -44,11 +46,12 @@ async function createEntraVerifier(config, { key, now = Date.now } = {}) {
         ![payload.iat, payload.nbf, payload.exp].every(Number.isInteger) ||
         payload.iat > Math.floor(now() / 1000) + 30 || payload.exp <= payload.iat)
       throw new CoworkAuthError(401, "invalid_token");
-    if (payload.idtyp === "app" || typeof payload.scp !== "string" || !payload.scp.split(" ").includes(SCOPE))
-      throw new CoworkAuthError(403, "delegated_incident_scope_required");
+    const scopes = typeof payload.scp === "string" ? MANAGEMENT_SCOPES.filter(scope => payload.scp.split(" ").includes(scope)) : [];
+    if (payload.idtyp === "app" || !scopes.length)
+      throw new CoworkAuthError(403, "delegated_management_scope_required");
     if (payload.azp !== client || typeof payload.oid !== "string" || !new RegExp(guid.pattern).test(payload.oid))
       throw new CoworkAuthError(403, "requester_not_authorized");
-    return Object.freeze({ tenant_id: tenant, object_id: payload.oid, client_id: client });
+    return Object.freeze({ tenant_id: tenant, object_id: payload.oid, client_id: client, scopes: Object.freeze(scopes) });
   };
 }
-module.exports = { SCOPE, authProperties, CoworkAuthError, createEntraVerifier };
+module.exports = { SCOPE, USER_SCOPE, MANAGEMENT_SCOPES, authProperties, CoworkAuthError, createEntraVerifier };

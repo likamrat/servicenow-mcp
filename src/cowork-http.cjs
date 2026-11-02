@@ -3,8 +3,11 @@ const path = require("node:path");
 const { validate } = require("./admin/validate.cjs");
 const { instanceOrigin } = require("./configuration.cjs");
 const { requestOrigin, requestBoundary } = require("./http-boundary.cjs");
-const { SCOPE, authProperties, CoworkAuthError } = require("./cowork-auth.cjs");
-const tools = [...require("../contracts/cowork-tools.json").tools, ...require("../contracts/incident-tools.json").tools];
+const { SCOPE, USER_SCOPE, MANAGEMENT_SCOPES, authProperties, CoworkAuthError } = require("./cowork-auth.cjs");
+const userTools = require("./admin/users.cjs").tools;
+const tools = [...require("../contracts/cowork-tools.json").tools, ...require("../contracts/incident-tools.json").tools, ...userTools];
+const toolScope = tool => userTools.some(item => item.name === tool.name) ? USER_SCOPE : SCOPE;
+const admittedTools = caller => tools.filter(tool => caller.scopes?.includes(toolScope(tool)));
 const profileSchema = { type: "object", properties: { ...authProperties,
   format: { const: 1 }, instance: { type: "string" }, public_url: { type: "string", maxLength: 2048 },
   port: { type: "integer", minimum: 1, maximum: 65535 }, writes_enabled: { type: "boolean" },
@@ -62,12 +65,12 @@ function createCoworkApp({ profile, backend, verifyAccessToken,
     allowedHosts: new Set(["localhost", "127.0.0.1", "[::1]", resource.hostname]),
     allowedOrigins: new Set(profile.allowed_origins || []),
   }));
-  const fullScope = `api://${profile.audience}/${SCOPE}`;
+  const fullScopes = MANAGEMENT_SCOPES.map(scope => `api://${profile.audience}/${scope}`);
   const metadataPath = "/.well-known/oauth-protected-resource/mcp";
   const metadataUrl = new URL(metadataPath, resource.origin).href;
   app.get([metadataPath, "/.well-known/oauth-protected-resource"], (_req, res) => res.json({
     resource: resource.href, authorization_servers: [`https://login.microsoftonline.com/${profile.tenant_id}/v2.0`],
-    scopes_supported: [fullScope], bearer_methods_supported: ["header"], resource_name: "ServiceNow incidents",
+    scopes_supported: fullScopes, bearer_methods_supported: ["header"], resource_name: "ServiceNow records and users",
   }));
   app.use("/mcp", async (req, res, next) => {
     try {
@@ -79,7 +82,7 @@ function createCoworkApp({ profile, backend, verifyAccessToken,
     } catch (error) {
       if (!(error instanceof CoworkAuthError)) return next(error);
       if (error.status !== 503) res.set("WWW-Authenticate",
-        `Bearer resource_metadata="${metadataUrl}", scope="${fullScope}"`);
+        `Bearer resource_metadata="${metadataUrl}", scope="${fullScopes.join(" ")}"`);
       res.status(error.status).json({ error: error.code });
     }
   });
@@ -95,13 +98,15 @@ function createCoworkApp({ profile, backend, verifyAccessToken,
       protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "servicenow-mcp", version: "1.0.0" },
     } });
     if (method === "ping") return res.json({ jsonrpc: "2.0", id, result: {} });
-    if (method === "tools/list") return res.json({ jsonrpc: "2.0", id, result: { tools } });
+    if (method === "tools/list") return res.json({ jsonrpc: "2.0", id, result: { tools: admittedTools(res.locals.requester) } });
     if (method !== "tools/call") return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found." } });
-    const tool = tools.find(item => item.name === params?.name);
     const caller = res.locals.requester;
+    const tool = tools.find(item => item.name === params?.name);
+    const scopeAllowed = tool && caller.scopes?.includes(toolScope(tool));
     let dispatched = false;
     try {
       if (!tool) throw new Error("Tool unavailable through the Cowork incident interface.");
+      if (!scopeAllowed) throw new Error("The verified delegated token lacks this tool's management scope.");
       if (!tool.annotations.readOnlyHint && !profile.writes_enabled) throw new Error("Cowork writes are disabled by the operator.");
       dispatched = true;
       const result = await backend.handle(tool.name, params.arguments === undefined ? {} : params.arguments,
@@ -110,7 +115,7 @@ function createCoworkApp({ profile, backend, verifyAccessToken,
       return res.json({ jsonrpc: "2.0", id, result: auditedResult(caller, tool, "success", status,
         { content: [{ type: "text", text: JSON.stringify(result) }] }) });
     } catch (error) {
-      const status = !tool ? "tool_unavailable" : !dispatched ? "writes_disabled" :
+      const status = !tool ? "tool_unavailable" : !scopeAllowed ? "scope_required" : !dispatched ? "writes_disabled" :
         ["uncertain", "not_sent"].includes(error.outcome?.status) ? error.outcome.status : "failed";
       return res.json({ jsonrpc: "2.0", id, result: auditedResult(caller, tool, dispatched ? "error" : "not_dispatched", status,
         { isError: true, content: [{ type: "text", text: JSON.stringify({
