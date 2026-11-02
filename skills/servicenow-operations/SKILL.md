@@ -66,7 +66,7 @@ user to supply an email if it can be discovered there, and never cross an explic
 source restriction. Supplied profile data is not backend-verified directory
 identity. Existing-account collisions are not adoption permission.
 
-Ordinary profile CRUD excludes credentials, login/status and role/group values.
+Ordinary profile updates exclude credentials, login/status and role/group values.
 Creation is inactive, locked and notification-disabled and reports assignee
 readiness as not evaluated. Retain that identity if later eligibility or
 assignment is blocked. Do not activate or grant ACL-bearing roles through a
