@@ -79,3 +79,142 @@ test("the authenticated interface gates all ten tools and exposes only protected
   assert.equal(calls.length, 1);
   assert.throws(() => validateProfile({ ...profile, allowed_callers: [oid] }), /Unexpected/);
 });
+
+test("opt-in tool audit logs only verified identity, catalog tool and bounded outcomes", async t => {
+  const { generateKeyPair, SignJWT } = await import("jose");
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const another = "55555555-5555-4555-8555-555555555555";
+  const sign = objectId => new SignJWT({ tid: tenant, oid: objectId, azp: client, ver: "2.0", scp: SCOPE })
+    .setProtectedHeader({ alg: "RS256" }).setIssuer(`https://login.microsoftonline.com/${tenant}/v2.0`)
+    .setAudience(audience).setIssuedAt().setNotBefore("0s").setExpirationTime("5m").sign(privateKey);
+  const tokens = [await sign(oid), await sign(another)];
+  const audit = [], callers = [];
+  let failure, result = { status: "confirmed", record: { description: "PRIVATE_SOURCE_BODY" } };
+  const server = createCoworkApp({ profile: { ...profile, writes_enabled: true, audit_enabled: true },
+    backend: { handle: async (_name, _args, callerKey) => {
+      callers.push(callerKey);
+      if (failure) throw failure;
+      return result;
+    } },
+    verifyAccessToken: await createEntraVerifier(profile, { key: publicKey }),
+    writeAudit: line => audit.push(line),
+  }).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const rpc = (name, token = tokens[0], method = "tools/call") => fetch(`http://127.0.0.1:${server.address().port}/mcp`, {
+    method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+      "X-Private-Header": "PRIVATE_HEADER" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: "PRIVATE_RPC_ID", method,
+      params: { name, arguments: { private_argument: "PRIVATE_ARGUMENT", caller: "SPOOFED_CALLER" } } }),
+  });
+  for (const token of tokens) {
+    const response = await (await rpc("update_incident", token)).json();
+    assert.notEqual(response.result.isError, true);
+  }
+  assert.deepEqual(callers, [`${tenant}:${oid}:${client}`, `${tenant}:${another}:${client}`]);
+  assert.deepEqual(audit.map(JSON.parse), [oid, another].map(object_id => ({
+    event: "cowork_tool_audit", tenant_id: tenant, object_id, client_id: client,
+    tool: "update_incident", outcome: "success", status: "confirmed",
+  })));
+  failure = Object.assign(new Error("PRIVATE_RAW_ERROR"), {
+    diagnostic: { detail: "PRIVATE_DIAGNOSTIC" }, outcome: { status: "uncertain", before: "PRIVATE_BEFORE" },
+  });
+  assert.equal((await (await rpc("update_incident")).json()).result.isError, true);
+  assert.deepEqual(JSON.parse(audit.at(-1)), { event: "cowork_tool_audit", tenant_id: tenant,
+    object_id: oid, client_id: client, tool: "update_incident", outcome: "error", status: "uncertain" });
+  failure.outcome.status = "PRIVATE_UNTRUSTED_ERROR_STATUS";
+  await rpc("update_incident");
+  assert.equal(JSON.parse(audit.at(-1)).status, "failed");
+  failure = undefined;
+  result = { status: "PRIVATE_UNTRUSTED_RESULT_STATUS", record: "PRIVATE_SOURCE_BODY" };
+  await rpc("get_incident");
+  assert.equal(JSON.parse(audit.at(-1)).status, "completed");
+  await rpc("PRIVATE_UNREGISTERED_TOOL");
+  assert.deepEqual(JSON.parse(audit.at(-1)), { event: "cowork_tool_audit", tenant_id: tenant,
+    object_id: oid, client_id: client, tool: null, outcome: "not_dispatched", status: "tool_unavailable" });
+  const count = audit.length;
+  await rpc("get_incident", tokens[0], "tools/list");
+  assert.equal((await rpc("get_incident", "PRIVATE_INVALID_TOKEN")).status, 401);
+  assert.equal(audit.length, count);
+  const text = audit.join("");
+  assert.doesNotMatch(text, /PRIVATE_|SPOOFED_CALLER|Bearer/);
+  for (const token of tokens) assert.equal(text.includes(token), false);
+  for (const line of audit) {
+    assert.ok(line.endsWith("\n"));
+    assert.deepEqual(Object.keys(JSON.parse(line)), ["event", "tenant_id", "object_id", "client_id", "tool", "outcome", "status"]);
+  }
+});
+
+test("audit is off by default, records disabled-write rejection when enabled and preserves outcomes on output failure", async t => {
+  for (const mode of ["default", "disabled", "blocked", "output_failure"]) {
+    const audit = [];
+    let calls = 0;
+    const config = { ...profile, writes_enabled: mode !== "blocked",
+      ...(mode === "default" ? {} : { audit_enabled: mode !== "disabled" }) };
+    const server = createCoworkApp({ profile: config,
+      backend: { handle: async () => { calls++; return { status: "confirmed", operation_id: "PRIVATE_OPERATION" }; } },
+      verifyAccessToken: async () => ({ tenant_id: tenant, object_id: oid, client_id: client }),
+      writeAudit: line => {
+        if (mode === "output_failure") throw new Error("PRIVATE_SINK_ERROR");
+        audit.push(line);
+      },
+    }).listen(0, "127.0.0.1");
+    await once(server, "listening");
+    t.after(() => { server.closeAllConnections(); server.close(); });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/mcp`, {
+      method: "POST", headers: { Authorization: "Bearer synthetic", "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+        params: { name: "update_incident", arguments: {} } }),
+    });
+    const rpc = await response.json();
+    assert.equal(response.status, 200);
+    if (mode === "blocked") {
+      assert.equal(calls, 0);
+      assert.equal(rpc.result.isError, true);
+      assert.deepEqual(audit.map(JSON.parse), [{ event: "cowork_tool_audit",
+        tenant_id: tenant, object_id: oid, client_id: client, tool: "update_incident",
+        outcome: "not_dispatched", status: "writes_disabled" }]);
+    } else {
+      assert.equal(calls, 1);
+      assert.notEqual(rpc.result.isError, true);
+      assert.deepEqual(JSON.parse(rpc.result.content[0].text), { status: "confirmed", operation_id: "PRIVATE_OPERATION" });
+      assert.equal(audit.length, 0);
+      if (mode === "output_failure") {
+        assert.equal(rpc.result.content.length, 2);
+        assert.match(rpc.result.content[1].text, /audit output unavailable.*outcome is unchanged; do not retry/);
+        assert.doesNotMatch(JSON.stringify(rpc), /PRIVATE_SINK_ERROR/);
+      } else assert.equal(rpc.result.content.length, 1);
+    }
+  }
+});
+
+test("the default audit destination emits one bounded JSON line on stderr and leaves the MCP response intact", () => {
+  const { spawnSync } = require("node:child_process");
+  const child = spawnSync(process.execPath, ["-e", `
+    const { createCoworkApp } = require(${JSON.stringify(require.resolve("../src/cowork-http.cjs"))});
+    const server = createCoworkApp({
+      profile: ${JSON.stringify({ ...profile, audit_enabled: true })},
+      verifyAccessToken: async () => (${JSON.stringify({ tenant_id: tenant, object_id: oid, client_id: client })}),
+      backend: { handle: async () => ({ record: "PRIVATE_SOURCE_BODY" }) },
+    }).listen(0, "127.0.0.1", async () => {
+      try {
+        const response = await fetch("http://127.0.0.1:" + server.address().port + "/mcp", {
+          method: "POST",
+          headers: { Authorization: "Bearer PRIVATE_TOKEN", "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: { name: "get_incident", arguments: { number: "PRIVATE_ARGUMENT" } } }),
+        });
+        process.stdout.write(JSON.stringify(await response.json()));
+      } finally { server.closeAllConnections(); server.close(); }
+    });
+  `], { encoding: "utf8", timeout: 10000 });
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(child.stderr.trim().split(/\r?\n/).map(JSON.parse), [{
+    event: "cowork_tool_audit", tenant_id: tenant, object_id: oid, client_id: client,
+    tool: "get_incident", outcome: "success", status: "completed",
+  }]);
+  const rpc = JSON.parse(child.stdout);
+  assert.notEqual(rpc.result.isError, true);
+  assert.equal(JSON.parse(rpc.result.content[0].text).record, "PRIVATE_SOURCE_BODY");
+  assert.doesNotMatch(child.stderr, /PRIVATE_|Bearer/);
+});

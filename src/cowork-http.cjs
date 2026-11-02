@@ -8,6 +8,7 @@ const tools = [...require("../contracts/cowork-tools.json").tools, ...require(".
 const profileSchema = { type: "object", properties: { ...authProperties,
   format: { const: 1 }, instance: { type: "string" }, public_url: { type: "string", maxLength: 2048 },
   port: { type: "integer", minimum: 1, maximum: 65535 }, writes_enabled: { type: "boolean" },
+  audit_enabled: { type: "boolean" },
   allowed_origins: { type: "array", maxItems: 10, uniqueItems: true, items: { type: "string" } },
 }, required: [...Object.keys(authProperties), "format", "instance", "public_url", "writes_enabled"], additionalProperties: false };
 
@@ -36,10 +37,25 @@ function loadProfile(file) {
   validateProfile(profile);
   return profile;
 }
-function createCoworkApp({ profile, backend, verifyAccessToken }) {
+function createCoworkApp({ profile, backend, verifyAccessToken,
+  writeAudit = line => fs.writeSync(process.stderr.fd, line) }) {
   const resource = validateProfile(profile);
   if (typeof verifyAccessToken !== "function" || typeof backend?.handle !== "function")
     throw new Error("Authenticated Cowork dependencies are required.");
+  if (profile.audit_enabled && typeof writeAudit !== "function") throw new Error("Cowork audit output is required when enabled.");
+  function auditedResult(caller, tool, outcome, status, result) {
+    if (profile.audit_enabled) {
+      try {
+        writeAudit(JSON.stringify({ event: "cowork_tool_audit",
+          tenant_id: caller.tenant_id, object_id: caller.object_id, client_id: caller.client_id,
+          tool: tool?.name ?? null, outcome, status }) + "\n");
+      } catch {
+        // Audit failure cannot turn an already attempted source operation into a retryable failure.
+        result.content.push({ type: "text", text: "Caller audit output unavailable. The original tool outcome is unchanged; do not retry an attempted write." });
+      }
+    }
+    return result;
+  }
   const app = require("express")();
   app.disable("x-powered-by");
   app.use(requestBoundary({
@@ -81,18 +97,25 @@ function createCoworkApp({ profile, backend, verifyAccessToken }) {
     if (method === "ping") return res.json({ jsonrpc: "2.0", id, result: {} });
     if (method === "tools/list") return res.json({ jsonrpc: "2.0", id, result: { tools } });
     if (method !== "tools/call") return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found." } });
+    const tool = tools.find(item => item.name === params?.name);
+    const caller = res.locals.requester;
+    let dispatched = false;
     try {
-      const tool = tools.find(item => item.name === params?.name);
       if (!tool) throw new Error("Tool unavailable through the Cowork incident interface.");
       if (!tool.annotations.readOnlyHint && !profile.writes_enabled) throw new Error("Cowork writes are disabled by the operator.");
-      const caller = res.locals.requester;
+      dispatched = true;
       const result = await backend.handle(tool.name, params.arguments === undefined ? {} : params.arguments,
         `${caller.tenant_id}:${caller.object_id}:${caller.client_id}`);
-      return res.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(result) }] } });
+      const status = ["confirmed", "no_change", "uncertain", "not_sent"].includes(result?.status) ? result.status : "completed";
+      return res.json({ jsonrpc: "2.0", id, result: auditedResult(caller, tool, "success", status,
+        { content: [{ type: "text", text: JSON.stringify(result) }] }) });
     } catch (error) {
-      return res.json({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text: JSON.stringify({
+      const status = !tool ? "tool_unavailable" : !dispatched ? "writes_disabled" :
+        ["uncertain", "not_sent"].includes(error.outcome?.status) ? error.outcome.status : "failed";
+      return res.json({ jsonrpc: "2.0", id, result: auditedResult(caller, tool, dispatched ? "error" : "not_dispatched", status,
+        { isError: true, content: [{ type: "text", text: JSON.stringify({
         error: error.message, diagnostic: error.diagnostic, outcome: error.outcome,
-      }) }] } });
+      }) }] }) });
     }
   });
   app.get("/mcp", (_req, res) => res.status(405).set("Allow", "POST").end());

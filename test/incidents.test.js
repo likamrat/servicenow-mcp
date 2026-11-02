@@ -162,23 +162,25 @@ test("signed Cowork HTTP calls use the same guarded backend for recent reads and
   const profile = { format: 1, tenant_id: tenant, client_id: client, audience, writes_enabled: true,
     instance: "https://service.example.invalid", public_url: "https://mcp.example.invalid/mcp" };
   const { privateKey, publicKey } = await generateKeyPair("RS256");
-  const token = await new SignJWT({ tid: tenant, oid: "22222222-2222-4222-8222-222222222222",
+  const signCaller = oid => new SignJWT({ tid: tenant, oid,
     azp: client, ver: "2.0", scp: "Incident.Manage" }).setProtectedHeader({ alg: "RS256" })
     .setIssuer(`https://login.microsoftonline.com/${tenant}/v2.0`).setAudience(audience)
     .setIssuedAt().setNotBefore("0s").setExpirationTime("5m").sign(privateKey);
+  const token = await signCaller("22222222-2222-4222-8222-222222222222");
+  const secondToken = await signCaller("55555555-5555-4555-8555-555555555555");
   const server = createCoworkApp({ profile, backend: f.admin,
     verifyAccessToken: await createEntraVerifier(profile, { key: publicKey }),
   }).listen(0, "127.0.0.1");
   await once(server, "listening");
   t.after(() => { server.closeAllConnections(); server.close(); });
-  const call = async (name, args) => {
+  const call = async (name, args, accessToken = token, expectError = false) => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/mcp`, {
-      method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
     });
     assert.equal(response.status, 200);
     const rpc = await response.json();
-    assert.notEqual(rpc.result.isError, true, rpc.result.content[0].text);
+    assert.equal(rpc.result.isError === true, expectError, rpc.result.content[0].text);
     return JSON.parse(rpc.result.content[0].text);
   };
   const incident = await call("get_incident", { number: f.incident.number });
@@ -186,17 +188,30 @@ test("signed Cowork HTTP calls use the same guarded backend for recent reads and
   assert.ok(f.requests.at(-1).query.startsWith("sys_updated_on>javascript:gs.monthsAgo(6)^"));
   const candidate = await call("resolve_incident_assignee", { identity: "Avery" });
   assert.equal(candidate.resolution, "unique");
+  const createId = randomUUID();
   const created = await call("create_incident", {
-    values: { short_description: "Cowork synthetic incident" }, operation_id: randomUUID(),
+    values: { short_description: "Cowork synthetic incident" }, operation_id: createId,
   });
   assert.equal(created.status, "confirmed");
+  assert.equal((await call("get_incident", { number: f.incident.number }, secondToken)).number, f.incident.number);
+  const requestCount = f.requests.length;
+  const unavailable = await call("get_incident_operation", { operation_id: createId }, secondToken, true);
+  assert.deepEqual(Object.keys(unavailable), ["error"]);
+  assert.match(unavailable.error, /not available to this requester/);
+  assert.equal(f.requests.length, requestCount, "Another caller's receipt must not cause source observation");
+  const replay = await call("update_incident", { number: incident.number, expected_mod_count: f.incident.sys_mod_count,
+    values: { assigned_to: f.users[0].sys_id }, operation_id: createId }, secondToken, true);
+  assert.match(replay.error, /already attempted/);
+  assert.equal(f.requests.length, requestCount, "Changing callers must not bypass a consumed UUID");
+  assert.equal((await call("get_incident_operation", { operation_id: createId })).status, "confirmed");
   for (const assigned_to of [candidate.candidates[0].sys_id, f.users[1].sys_id, null]) {
     const operation_id = randomUUID();
+    const ownerToken = assigned_to === f.users[1].sys_id ? secondToken : token;
     const result = await call("update_incident", { number: incident.number, expected_mod_count: f.incident.sys_mod_count,
-      values: { assigned_to }, operation_id });
+      values: { assigned_to }, operation_id }, ownerToken);
     assert.equal(result.status, "confirmed");
     assert.equal(result.assignment_group_preserved, true);
-    assert.equal((await call("get_incident_operation", { operation_id })).unresolved_hold, false);
+    assert.equal((await call("get_incident_operation", { operation_id }, ownerToken)).unresolved_hold, false);
   }
   assert.equal((await call("delete_incident", { number: incident.number, expected_mod_count: f.incident.sys_mod_count,
     operation_id: randomUUID(), confirm: true })).deleted, true);

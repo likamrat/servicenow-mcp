@@ -161,6 +161,38 @@ token. Unauthenticated resource metadata is available at
 metadata and the required scope. This server is a protected resource, not an
 authorization server, dynamic client registrar or token store.
 
+### Optional verified-caller audit
+
+Set `audit_enabled: true` in the private `cowork-profile.json` to emit one JSON
+line to the backend's standard error stream after each authenticated tool call
+finishes or is rejected by the tool/write gate. Omit it or use `false` to keep
+auditing off. Retain the output only in the operator's access-controlled local
+logs: immutable object IDs are user identifiers. This adds no network log
+destination, per-person allowlist or token capture.
+
+Each `cowork_tool_audit` event has only `tenant_id`, `object_id`, `client_id`,
+`tool`, `outcome` and `status` in addition to the fixed event name. Identity
+comes from the verified delegated token, not request arguments. Tool names
+come from the registered catalog; an unregistered name becomes `null`.
+Tokens, headers, request IDs, arguments, operation IDs, source records,
+responses and raw error text are never included.
+
+`outcome` is `success`, `error` or `not_dispatched`. Status is a bounded label:
+`completed`, `confirmed`, `no_change`, `uncertain`, `not_sent`, `failed`,
+`writes_disabled` or `tool_unavailable`. For an operation-status read, its
+status can describe the earlier operation; it does not mean a new write ran.
+Authentication failures, discovery calls and notifications do not emit
+verified-caller events. An interrupted call may have no completion line;
+absence is not proof that no source write occurred.
+
+Auditing does not replace the durable operation journal, prove user consent
+or change source authority. If audit output fails, the original tool result
+is preserved with a fixed audit-unavailable warning; do not retry a write
+to obtain an audit line. Each caller can read only their own operation
+receipts; uncertainty and consumed-UUID guards remain shared across callers.
+Other authorized tenant accounts use their own native Cowork sign-in and
+must meet the same tenant, issuer, audience, client and scope checks.
+
 ### Backend connection and launch
 
 In the protected binding's external `state_directory`, create an
