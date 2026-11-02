@@ -7,7 +7,7 @@ const { randomUUID } = require("node:crypto");
 const { createAdmin } = require("../src/admin/index.cjs");
 
 const id = value => value.repeat(32);
-function fixture(t) {
+function fixture(t, { beforeRead } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "servicenow-incidents-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const incident = { sys_id: id("a"), number: "INC0000001", short_description: "Synthetic incident",
@@ -28,6 +28,7 @@ function fixture(t) {
     const query = url.searchParams.get("sysparm_query") || "";
     const values = options.body ? JSON.parse(options.body) : undefined;
     requests.push({ table, recordId, query, method: options.method, values });
+    if (options.method === "GET" && beforeRead) await beforeRead(table);
     if (options.method !== "GET" && mode.denied)
       return Response.json({ error: { message: "Security constraints deny this operation" } }, { status: 403 });
     let rows = [];
@@ -222,4 +223,53 @@ test("uncertain creation survives restart and blocks both semantic and generic w
     expected_mod_count: f.incident.sys_mod_count, values: { short_description: "Must not replay" },
     operation_id: randomUUID() }), /unresolved/);
   assert.equal(f.writes().length, 1);
+});
+
+test("parallel Cowork schema and assignee calls serialize on their shared backend instead of failing ownership", { timeout: 10000 }, async t => {
+  const { createCoworkApp } = require("../src/cowork-http.cjs");
+  const { once } = require("node:events");
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const resolverDispatched = Promise.withResolvers();
+  let paused = false;
+  const f = fixture(t, { beforeRead: async table => {
+    if (table === "sys_db_object" && !paused) {
+      paused = true;
+      entered.resolve();
+      await release.promise;
+    }
+  } });
+  const caller = { tenant_id: "11111111-1111-4111-8111-111111111111",
+    object_id: "22222222-2222-4222-8222-222222222222", client_id: "33333333-3333-4333-8333-333333333333" };
+  const server = createCoworkApp({
+    profile: { format: 1, tenant_id: caller.tenant_id, client_id: caller.client_id,
+      audience: "44444444-4444-4444-8444-444444444444", writes_enabled: false,
+      instance: "https://service.example.invalid", public_url: "https://mcp.example.invalid/mcp" },
+    backend: { handle: (name, ...args) => {
+      const result = f.admin.handle(name, ...args);
+      if (name === "resolve_incident_assignee") resolverDispatched.resolve();
+      return result;
+    } },
+    verifyAccessToken: async () => caller,
+  }).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => { release.resolve(); server.closeAllConnections(); server.close(); });
+  const call = async (name, args) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/mcp`, {
+      method: "POST", headers: { Authorization: "Bearer synthetic", "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: name, method: "tools/call", params: { name, arguments: args } }),
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const schema = call("get_incident_schema", {});
+  await entered.promise;
+  const resolver = call("resolve_incident_assignee", { identity: "Avery", field: "first_name" });
+  await resolverDispatched.promise;
+  const read = await call("get_incident", { number: f.incident.number });
+  assert.notEqual(read.result.isError, true);
+  release.resolve();
+  const results = await Promise.all([schema, resolver]);
+  for (const result of results) assert.notEqual(result.result.isError, true, result.result.content[0].text);
+  assert.equal(JSON.parse(results[1].result.content[0].text).resolution, "unique");
+  assert.equal(f.writes().length, 0);
 });

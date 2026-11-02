@@ -19,6 +19,7 @@ function createState({ directory, instance, username }) {
   const lock = path.join(directory, "operation.lock");
   const binding = { format: 1, instance, principal: username };
   let entries = [];
+  let pending = Promise.resolve();
   function append(entry) {
     const row = { at: new Date().toISOString(), ...entry };
     const fd = fs.openSync(journal, "a", 0o600);
@@ -31,7 +32,13 @@ function createState({ directory, instance, username }) {
     if (attempted(id)) throw new Error("Operation UUID already attempted; reconcile without replay.");
     append({ ...meta, operation_id: id, status: "attempt" });
   }
-  async function run(action) {
+  function run(action) {
+    const result = pending.then(() => runExclusive(action));
+    // Keep the queue usable after failure; the caller still receives the original rejection.
+    pending = result.then(() => undefined, () => undefined);
+    return result;
+  }
+  async function runExclusive(action) {
     let fd;
     try { fd = fs.openSync(lock, "wx", 0o600); }
     catch (error) {

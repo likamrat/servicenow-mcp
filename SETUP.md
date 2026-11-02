@@ -257,9 +257,11 @@ and the authenticated interface above, not this legacy listener.
 ## Operation state and recovery
 
 The shared backend keeps instance/account-bound journals and restoration snapshots
-in its private state directory. Processes sharing that directory serialize their
-operations; this does not lock other tools or ServiceNow writers. Source version
-checks are preflight checks, not atomic compare-and-swap.
+in its private state directory. Calls on one backend instance queue before taking
+the exclusive state-file lock. Other instances/processes using that directory
+are refused while an owner holds the lock; they are not automatically retried.
+This does not lock other ServiceNow writers. Source version checks are preflight
+checks, not atomic compare-and-swap.
 
 | Situation | Action |
 |---|---|
@@ -269,6 +271,12 @@ checks are preflight checks, not atomic compare-and-swap.
 | The instance or source account changes | Use a separate state directory; do not rebind an existing journal. |
 | Users must be retained | Maintain their exact IDs in the private `retained-user-ids.json` array. The operator is protected independently. |
 | The plugin is uninstalled | Preserve the external state directory. Uninstalling does not undo ServiceNow changes or resolve pending operations. |
+
+Before a controlled restart, stop incoming calls and account for all clients and
+helpers sharing the state directory, not just HTTP connections. Wait for in-flight
+state operations to complete. A forced process termination can retain the lock;
+startup does not remove it. The four bounded ticket reads do not acquire this
+lock, so successful retrieval alone does not establish state-operation readiness.
 
 Place reviewed account, access and image policy files in the same private
 directory. See [source-policy configuration](CAPABILITIES.md#source-policy-configuration)
