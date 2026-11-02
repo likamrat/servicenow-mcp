@@ -325,6 +325,16 @@ The current source operator, named/ID-protected users and retention holds remain
 protected. External/provider-managed and service/unknown identities are not
 ordinary profile-update targets.
 
+Schema output separates `generic_record_interface.mutation_allowed=false`
+(the generic `local_record_*` exclusion for user records) from the supported
+semantic user tools. `semantic_user_interface.policy_status` and
+`source_permission` are `not_evaluated` on this read, not a write denial or
+approval. The normal create/update/delete guards still run on their own paths.
+Presentation labels do not change the underlying reviewed schema fingerprint.
+For source choice mode `2`, `choice_semantics` explicitly identifies suggestions,
+not a restricted picklist; ordinary string/length and actual source policies
+still apply. Do not require a suggested title when the source allows other text.
+
 Creation explicitly overrides unsafe-for-this-path lifecycle defaults with
 `active=false`, `locked_out=true`, `notification="1"`, `identity_type="human"`,
 `internal_integration_user=false` and `web_service_access_only=false`. It supplies
@@ -376,6 +386,14 @@ Definition policies contain no preloaded user names or directory IDs. The agent
 resolves each requested person at runtime and supplies the legitimate source
 user ID. Work IQ or another directory tool belongs to the agent-side context
 step; supplied source attributes do not become backend-verified directory claims.
+
+An empty-argument policy listing returns `qualification: "not_evaluated"` and
+`policy_available: null`, alongside each configured `enabled` flag. It does not
+perform source qualification or mean that a policy is unavailable. An explicit
+definition review returns `qualification: "review_required"`; an enabled
+policy-key check returns `qualification: "matched_reviewed_evidence"` and
+`policy_available: true` only after the existing checks pass. None of these
+states substitutes for caller authorization, source permission or user consent.
 
 Preflight the selected policy **before** `create_user`. An unavailable/disabled
 policy or insufficient caller scope should not produce avoidable accounts.

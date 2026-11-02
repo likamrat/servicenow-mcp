@@ -178,6 +178,22 @@ test("reviewed generic access policy applies to unseen users, reuses access and 
   assert.ok(f.writes().every(row => !Object.hasOwn(row.values, "inherited")), "Read-only native inheritance is never fabricated");
 });
 
+test("policy listing distinguishes unevaluated readiness from disabled policy without qualifying it", async t => {
+  const f = fixture(t);
+  await reviewedPolicy(f);
+  const requestCount = f.requests.length;
+  const listing = await f.admin.handle("inspect_user_access_policy", {});
+  assert.equal(listing.policies[0].enabled, true);
+  assert.equal(listing.policy_available, null);
+  assert.equal(listing.qualification, "not_evaluated");
+  assert.equal(listing.policies[0].qualification, "not_evaluated");
+  assert.equal(f.requests.length, requestCount, "Listing must not perform policy qualification");
+  const checked = await f.admin.handle("inspect_user_access_policy", { policy: listing.policies[0].key });
+  assert.equal(checked.policy_available, true);
+  assert.equal(checked.qualification, "matched_reviewed_evidence");
+  assert.equal(f.writes().length, 0);
+});
+
 test("access policy is closed before user creation and detects closure, ACL, caller and target drift", async t => {
   const f = fixture(t);
   await assert.rejects(f.admin.handle("inspect_user_access_policy", {}), /Missing operator-reviewed/);

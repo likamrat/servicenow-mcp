@@ -254,13 +254,16 @@ function createUserAccess({ source, state, records, principal, now = Date.now })
         if (Object.keys(args).length !== 1) throw new Error("Do not mix configured policy and definition-review inputs.");
         const result = await ready(args.policy);
         return { ...result.evidence, policy: args.policy, policy_available: true,
+          qualification: "matched_reviewed_evidence",
           caller_scope_required: "User.Access.Manage", source_user_required: false };
       }
       if (!Object.keys(args).length) return { policies: contract().policies.map(({ key, group_id, role_id, activate, enabled,
         allow_role_delegation, allow_unresolved_acl_references }) =>
-        ({ key, group_id, role_id, activate, enabled, allow_role_delegation, allow_unresolved_acl_references })), policy_available: false,
-        meaning: "Inspect one key to verify its live evidence before creating a user. Listing is not policy qualification." };
-      return { ...await inspection.inspect(args), policy_available: false, caller_scope_required: "User.Access.Manage" };
+        ({ key, group_id, role_id, activate, enabled, allow_role_delegation, allow_unresolved_acl_references,
+          qualification: "not_evaluated" })), policy_available: null, qualification: "not_evaluated",
+        meaning: "This lists configured policy keys and their enabled flags only. Readiness has not been evaluated, not denied. Call inspect_user_access_policy with one policy key to verify live evidence before creating a user." };
+      return { ...await inspection.inspect(args), policy_available: false, qualification: "review_required",
+        caller_scope_required: "User.Access.Manage" };
     }
     if (name === "assess_user_access") return assess(args, callerKey);
     if (name === "apply_user_access") return apply(args, callerKey);

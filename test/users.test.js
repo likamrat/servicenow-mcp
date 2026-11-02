@@ -44,9 +44,12 @@ function fixture(t) {
         sys_id: (index + 1).toString(16).padStart(32, "0"), name: "sys_user", element: field,
         internal_type: ["active", "locked_out", "internal_integration_user", "web_service_access_only"].includes(field) ? "boolean" : "string",
         max_length: field === "user_name" ? "40" : field === "email" ? "100" : "50",
+        choice: field === "title" ? "2" : "0",
         mandatory: field === "user_name" ? "true" : "false", default_value: "", reference: "",
       }));
     }
+    if (table === "sys_choice") result = [{ sys_id: id("2"), name: "sys_user", element: "title",
+      value: "Suggested title", label: "Suggested title", dependent_value: "" }];
     if (table === "sys_script") result = [{ sys_id: id("c"), sys_mod_count: mode.ruleVersion }];
     if (table === "sys_user") result = [...rows, operator].filter(row => query.split("^").every(part => {
       if (part.startsWith("ORDERBY")) return true;
@@ -91,6 +94,24 @@ test("generic user CRUD accepts internally discovered email as unverified reques
   assert.equal((await f.admin.handle("get_user_operation", { operation_id }, "caller-a")).status, "confirmed");
   await assert.rejects(f.admin.handle("get_user_operation", { operation_id }, "caller-b"), /not available/);
   assert.deepEqual(f.writes().map(row => row.method), ["POST", "PATCH"]);
+});
+
+test("user schema distinguishes generic record restrictions from semantic CRUD and unevaluated authorization", async t => {
+  const f = fixture(t);
+  await approve(f);
+  const raw = await f.admin.handle("local_record_schema", { table: "sys_user" });
+  const schema = await f.admin.handle("get_user_schema", {});
+  assert.equal(raw.mutationAllowed, false);
+  assert.equal(Object.hasOwn(schema.schema, "mutationAllowed"), false);
+  assert.equal(schema.generic_record_interface.mutation_allowed, false);
+  assert.equal(schema.semantic_user_interface.supported, true);
+  assert.equal(schema.semantic_user_interface.policy_status, "not_evaluated");
+  assert.equal(schema.semantic_user_interface.source_permission, "not_evaluated");
+  assert.equal(schema.schema.fields.title.choiceMode, "2");
+  assert.equal(schema.schema.fields.title.choice_semantics, "suggestions_not_restricted_picklist");
+  assert.equal(schema.schema.fields.title.choices.length, 1);
+  assert.equal(schema.schema_sha256, require("../src/admin/users.cjs").fingerprint(raw));
+  assert.equal(f.writes().length, 0);
 });
 
 test("profile CRUD preserves policy, current-operator, retention, collisions and sensitive-field boundaries", async t => {

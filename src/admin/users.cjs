@@ -246,9 +246,15 @@ function createUsers({ source, state, records, incidents, principal }) {
     validate(tool.inputSchema, args);
     if (name === "get_user_schema") {
       const evidence = await schemaEvidence();
-      return { ...evidence, schema: { ...evidence.schema,
-        fields: Object.fromEntries(Object.entries(evidence.schema.fields).filter(([field]) => GUARDED.includes(field))),
-      } };
+      const { mutationAllowed, ...schema } = evidence.schema;
+      return { ...evidence, schema: { ...schema,
+        fields: Object.fromEntries(Object.entries(schema.fields).filter(([field]) => GUARDED.includes(field))
+          .map(([field, spec]) => [field, { ...spec, ...(spec.choiceMode === "2" ?
+            { choice_semantics: "suggestions_not_restricted_picklist" } : {}) }])),
+      }, generic_record_interface: { mutation_allowed: mutationAllowed,
+        meaning: "This restriction applies only to generic local_record_* mutations, not the semantic create_user/update_user/delete_user tools." },
+      semantic_user_interface: { supported: true, policy_status: "not_evaluated", source_permission: "not_evaluated",
+        meaning: "Semantic user CRUD is available through its dedicated tools. Create/update recheck the reviewed user-profile contract and source/target guards at execution; this schema read does not authorize, deny or disable writes." } };
     }
     if (name === "lookup_users") return incidents.handle("resolve_incident_assignee", args, callerKey);
     if (name === "get_user") { const row = await get(args.sys_id); return { found: Boolean(row), record: project(row) }; }
