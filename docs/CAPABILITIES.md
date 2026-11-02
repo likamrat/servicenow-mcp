@@ -1,5 +1,7 @@
 # Tool reference
 
+[Documentation](README.md) | [Setup](SETUP.md) | [Repository overview](../README.md)
+
 Tools use the configured ServiceNow account and remain subject to its permissions.
 Write operations require authorization for the intended change; a confirmation
 field or successful assessment does not grant source permissions.
@@ -46,7 +48,7 @@ configuration, not model-supplied tool arguments:
   and `rules_sha256`. The schema fingerprint covers the complete
   `local_record_schema` result for `sys_ux_theme_asset`. The rule fingerprint
   covers sorted exact/inherited active insert-rule fields selected in
-  `src/admin/logo-import.cjs`. Fingerprints use recursively key-sorted JSON
+  [`src/admin/logo-import.cjs`](../src/admin/logo-import.cjs). Fingerprints use recursively key-sorted JSON
   and SHA256. A qualified review must cover the image-asset/Global-scope
   assumptions and native insert effects. The adapter compares content
   fingerprints but never writes captured rule bodies into the package or
@@ -67,7 +69,8 @@ automatic replacement.
 
 ## PNG staging
 
-For an authorized PNG, run the following locally in the configured environment:
+For an authorized PNG, run the following from the repository root in the
+configured environment:
 
 ```text
 node scripts/stage-logo.cjs <absolute-PNG-path> <expected-SHA256> <filename.png>

@@ -23,7 +23,7 @@ interface for Microsoft Copilot Cowork over the same backend.
 
 User profile creation/update, account lifecycle, access changes and new PNG imports require reviewed source
 policies. ServiceNow permissions still apply to every operation. See the
-[tool reference](CAPABILITIES.md) for tool names, prerequisites and limits.
+[tool reference](docs/CAPABILITIES.md) for tool names, prerequisites and limits.
 
 ## How it works
 
@@ -74,13 +74,13 @@ In the **GitHub Copilot app**:
 1. Open **Add** > **Manage marketplaces** and register `https://github.com/likamrat/servicenow-mcp`.
 2. Open **Add** > **Plugin**.
 3. Enter `servicenow-mcp@servicenow-community`, then select **Install**.
-4. Follow [SETUP.md](SETUP.md#github-copilot-app) to configure the connection and make a read-only request.
+4. Follow the [setup guide](docs/SETUP.md#github-copilot-app) to configure the connection and make a read-only request.
 
 Marketplace installation adds the plugin; it does not configure ServiceNow
-access. Local-server requirements and connection setup are in [SETUP.md](SETUP.md).
+access. Local-server requirements and connection setup are in the [setup guide](docs/SETUP.md).
 
-For other clients, use the [stdio setup](SETUP.md#other-mcp-clients).
-For Microsoft Copilot Cowork, use the [authenticated HTTP setup](SETUP.md#cowork-authenticated-server).
+For other clients, use the [stdio setup](docs/SETUP.md#other-mcp-clients).
+For Microsoft Copilot Cowork, use the [authenticated HTTP setup](docs/SETUP.md#cowork-authenticated-server).
 
 **HTTP access:** Cowork requires a configured Entra delegated resource scope and
 OAuth client registration; installing either plugin does not establish that
@@ -95,7 +95,7 @@ matches literal title text.
 Paste into your coding agent from this checkout:
 
 ```text
-Follow SETUP.md to connect ServiceNow MCP to my chosen client.
+Follow docs/SETUP.md to connect ServiceNow MCP to my chosen client.
 Check the prerequisites and use my existing credential setup; do not enroll
 credentials or put secrets in repository files or command arguments.
 For the GitHub Copilot app, configure the documented nonsecret provider binding.
@@ -108,6 +108,12 @@ Ask before installation, access changes or ServiceNow writes.
 Verify the connection with a read-only request from the chosen client.
 Report missing prerequisites and connection errors. Do not push or publish.
 ```
+
+## Documentation
+
+The [documentation index](docs/README.md) links to setup, tool capabilities,
+source-policy requirements, recovery guidance and provenance. Reference guides
+live in `docs/`; installable skill entrypoints remain in `skills/`.
 
 ## Development
 
@@ -130,5 +136,5 @@ originally created by [fizamusthafa](https://github.com/fizamusthafa/servicenow-
 Maintained by Lior Kamrat.
 
 MIT; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-[Source provenance](PROVENANCE.md) and
+[Source provenance](docs/PROVENANCE.md) and
 [third-party licenses](THIRD_PARTY_NOTICES.txt) are documented separately.

@@ -1,5 +1,11 @@
 # Setup
 
+[Documentation](README.md) | [Repository overview](../README.md)
+
+Run commands from the repository root unless a section says otherwise.
+Source, script and configuration paths in code examples are repository-relative;
+private configuration belongs in the external directories described below.
+
 Choose the connection for your client:
 
 - [GitHub Copilot app](#github-copilot-app): packaged skills and stdio tools.
@@ -134,7 +140,7 @@ account, credentials and operation state use the existing protected binding
 above; there is no separate assignment service or identity map.
 
 The canonical generated tool contract is
-[`contracts/cowork-authenticated-tools.json`](contracts/cowork-authenticated-tools.json).
+[`contracts/cowork-authenticated-tools.json`](../contracts/cowork-authenticated-tools.json).
 Regenerate it with `npm run contract:cowork -- --write`; verify it with
 `npm run contract:cowork -- --check`. Native stdio exposes the same incident
 operations alongside its existing administrative tools.

@@ -1,14 +1,16 @@
 # Source and dependency provenance
 
+[Documentation](README.md) | [Repository overview](../README.md)
+
 ## Authored source
 
 The public read-only baseline is
 `likamrat/servicenow-cowork-plugin@0b6aa835259e505e34bf954682516c89d4ec2e44`.
 Its MIT license and NOTICE identify the original
 `fizamusthafa/servicenow-cowork-plugin@05c37c3` lineage. Both copyright notices
-are retained in LICENSE.
+are retained in [LICENSE](../LICENSE).
 
-`contracts/cowork-tools.json` is byte-identical to that baseline's
+[`contracts/cowork-tools.json`](../contracts/cowork-tools.json) is byte-identical to that baseline's
 `plugin/mcp-tools.json`; SHA256:
 `0da5f1eb731a69c7d14079ded76a382976a0ffb61ad3feafe94c9bd2c6af1548`.
 The shared read adapter and read-only tests retain its behavior, with incident
@@ -41,14 +43,16 @@ to redistribute the material a reviewer consulted.
 
 ## Runtime closure
 
-The native bootstrap is `src/plugin.cjs` and the fixed
-`scripts/start-stdio.ps1` adapter. It requires a separately approved PowerShell
+The native bootstrap is [`src/plugin.cjs`](../src/plugin.cjs) and the fixed
+[`scripts/start-stdio.ps1`](../scripts/start-stdio.ps1) adapter. It requires a separately approved PowerShell
 executable and protected provider, pinned by private nonsecret configuration.
 Neither binary nor provider/store is distributed, and no secret store is
 implemented by this package.
 
-The backend stdio path consists of `src/stdio.cjs`, `src/configuration.cjs`,
-`src/reads.cjs`, `src/admin/`, and the read/incident contracts, using Node
+The backend stdio path consists of [`src/stdio.cjs`](../src/stdio.cjs),
+[`src/configuration.cjs`](../src/configuration.cjs),
+[`src/reads.cjs`](../src/reads.cjs), [`src/admin/`](../src/admin/),
+and the [read/incident contracts](../contracts/), using Node
 built-ins. No browser, operating-system credential module, database or
 private session directory is required by the backend.
 
@@ -74,7 +78,8 @@ managed-access restrictions or add a directory provider/framework.
 The optional HTTP entrypoints additionally use Express; authenticated Cowork
 uses `jose` for standard JWT/JWKS verification. Exact
 versions, package registry URLs and integrity digests are retained in
-`package-lock.json`. `THIRD_PARTY_NOTICES.txt` contains the unmodified license
+[`package-lock.json`](../package-lock.json).
+[`THIRD_PARTY_NOTICES.txt`](../THIRD_PARTY_NOTICES.txt) contains the unmodified license
 texts from the installed locked dependency closure, grouped only when the
 texts are byte-identical. MIT, ISC and BSD-3-Clause remain distinct licenses.
 Dependencies are not vendored in this repository; retain their notices if

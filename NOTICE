@@ -12,7 +12,7 @@ local authored candidate 54bdb474f07841fa1ffc664ab83da5cfa257ff1a.
 
 The administrative adapters are maintained original operator code by
 Lior Kamrat and contributors, extracted without private runtime bindings,
-source snapshots or vendor implementation bodies. See PROVENANCE.md.
+source snapshots or vendor implementation bodies. See docs/PROVENANCE.md.
 
 ServiceNow, Microsoft and GitHub product names identify connected systems.
 This project is not an official product of those companies. No vendor logos,
