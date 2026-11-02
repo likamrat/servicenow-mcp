@@ -78,6 +78,9 @@ In the **GitHub Copilot app**:
 
 Marketplace installation adds the plugin; it does not configure ServiceNow
 access. Local-server requirements and connection setup are in the [setup guide](docs/SETUP.md).
+Already installed? Use **Update plugin**, then start a new chat; see the
+[installed-plugin update guide](docs/SETUP.md#update-an-installed-plugin) for the
+current native release and how to verify the plugin-provided capabilities.
 
 For other clients, use the [stdio setup](docs/SETUP.md#other-mcp-clients).
 For Microsoft Copilot Cowork, use the [authenticated HTTP setup](docs/SETUP.md#cowork-authenticated-server).

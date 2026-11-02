@@ -30,6 +30,33 @@ PowerShell 7, and a provider implementing the [credential interface](#credential
 These are the app's documented
 [marketplace and plugin controls](https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app#adding-plugins).
 
+### Update an installed plugin
+
+The native plugin release is **1.1.0**. Its root `plugin.json` and marketplace
+entry use the same release version and retain the stable
+`servicenow-mcp@servicenow-community` identity. The catalog's `source: "./"` points
+to this repository's plugin root; it does not depend on an implementation branch
+or a private copied runtime. The published default branch is `main`.
+
+Open the installed **servicenow-mcp** plugin and choose **Update plugin**, then
+start a new chat. Confirm that the installed entry shows the new release and
+that the new chat uses the plugin-provided `servicenow-portable` server with the
+shared incident, user CRUD and reviewed-access tools. Do not treat a separately
+configured global `ServiceNow` server or a copied checkout's `tools/list` as
+proof that the installed plugin updated.
+
+The update replaces package files, not the approved external credential provider
+or operation state. Retain the existing host-provided `PLUGIN_DATA` binding and
+its external journal/policies; do not reinstall, clear data or copy credentials
+into the package to make an update work. If the installed version, source or
+component provenance remains stale, diagnose the app's supported update path.
+A declared version and a local package test do not independently prove a
+particular host completed the update.
+
+The plugin release version is distinct from the MCP server's `serverInfo`
+version and the Agent Plugins schema version. The latter remain `1.0.0`;
+changing distribution metadata does not change the protocol or source guards.
+
 ### Connection file
 
 The app supplies a private `PLUGIN_DATA` directory. On first start, the server

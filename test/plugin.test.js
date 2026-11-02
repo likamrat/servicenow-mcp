@@ -9,6 +9,25 @@ const { once } = require("node:events");
 const { spawn, spawnSync, execFileSync } = require("node:child_process");
 const { loadBinding } = require("../src/plugin.cjs");
 
+test("marketplace release matches the portable root manifest and preserves installed plugin identity", () => {
+  const root = path.join(__dirname, "..");
+  const plugin = JSON.parse(fs.readFileSync(path.join(root, "plugin.json"), "utf8"));
+  const marketplace = JSON.parse(fs.readFileSync(path.join(root, ".github", "plugin", "marketplace.json"), "utf8"));
+  assert.equal(plugin.$schema, "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json");
+  assert.equal(marketplace.name, "servicenow-community");
+  const entry = marketplace.plugins.find(item => item.name === plugin.name);
+  assert.equal(`${entry.name}@${marketplace.name}`, "servicenow-mcp@servicenow-community");
+  assert.equal(entry.version, plugin.version);
+  assert.match(plugin.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(entry.source, "./");
+  assert.equal(plugin.repository, "https://github.com/likamrat/servicenow-mcp");
+  assert.equal(fs.existsSync(path.join(root, entry.source, "mcp.json")), true);
+  assert.equal(fs.existsSync(path.join(root, entry.source, "skills", "servicenow-operations", "SKILL.md")), true);
+  assert.equal(fs.existsSync(path.join(root, entry.source, "skills", "servicenow-themes", "SKILL.md")), true);
+  assert.equal(Object.hasOwn(plugin, "branch"), false);
+  assert.equal(Object.hasOwn(plugin, "ref"), false);
+});
+
 test("plugin uses only PLUGIN_DATA and a pinned synthetic protected provider, never ambient source credentials", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "servicenow-binding-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -44,6 +63,7 @@ Export-ModuleMember -Function Get-ServiceNowStoredCredential
     state_directory: path.join(root, "retained-state") };
   const file = path.join(data, "connection.json");
   fs.writeFileSync(file, JSON.stringify(binding), { mode: 0o600 });
+  const originalBinding = fs.readFileSync(file);
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "mcp.json"), "utf8"));
   const config = manifest.mcpServers["servicenow-portable"];
   assert.equal(config.type, "stdio");
@@ -60,14 +80,19 @@ Export-ModuleMember -Function Get-ServiceNowStoredCredential
   child.stdin.end([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } },
     { jsonrpc: "2.0", method: "notifications/initialized" },
-    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "search_incidents", arguments: {} } },
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "search_incidents", arguments: {} } },
   ].map(JSON.stringify).join("\n") + "\n");
   const [code] = await once(child, "close");
   assert.equal(code, 0, errors);
   assert.equal(errors, "");
   const responses = output.trim().split("\n").map(JSON.parse);
   assert.equal(responses[0].result.serverInfo.version, "1.0.0");
-  assert.deepEqual(JSON.parse(responses[1].result.content[0].text), []);
+  const advertised = responses[1].result.tools;
+  for (const tool of require("../contracts/cowork-authenticated-tools.json").tools)
+    assert.deepEqual(advertised.find(item => item.name === tool.name), tool, `Protected packaged entrypoint exposes ${tool.name}`);
+  assert.deepEqual(JSON.parse(responses[2].result.content[0].text), []);
+  assert.deepEqual(fs.readFileSync(file), originalBinding, "Loading the package must not replace the approved private binding");
   assert.equal(calls, 1);
   assert.equal(output.includes(username), false);
   assert.equal(output.includes(password), false);

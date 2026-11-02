@@ -11,6 +11,7 @@
 ## Start here
 
 - [GitHub Copilot app](SETUP.md#github-copilot-app)
+- [Update an installed plugin](SETUP.md#update-an-installed-plugin)
 - [Other MCP clients](SETUP.md#other-mcp-clients)
 - [Authenticated Cowork server](SETUP.md#cowork-authenticated-server)
 - [Generic user CRUD](SETUP.md#generic-user-crud)
