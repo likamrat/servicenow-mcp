@@ -35,33 +35,21 @@ The incident number and person are illustrative; replace them with your own.
 ```mermaid
 ---
 config:
-  flowchart:
-    rankSpacing: 25
-    nodeSpacing: 25
-    padding: 12
-    subGraphTitleMargin:
-      bottom: 12
+  htmlLabels: false
 ---
 flowchart TB
-    Context["Work IQ / directory tools"]
-    subgraph Clients["AI assistants"]
-        Local["GitHub Copilot<br/>Other local MCP clients"]
-        Remote["Microsoft Copilot Cowork"]
-    end
-    Context -. "Optional identity context" .-> Clients
-
-    subgraph MCP["ServiceNow MCP: shared backend"]
-        direction LR
-        Operations["Reads + writes<br/>Write checks:<br/>schema, policy, version"]
-        Journal[("Operation journal<br/>Read-only recovery")]
-        Operations -. "Write intent<br/>and outcome" .-> Journal
-    end
-    Local -->|"Local stdio"| MCP
+    Context["Work IQ /<br/>directory tools<br/>(optional)"]
+    Local["GitHub Copilot<br/>Local MCP clients"]
+    Remote["Copilot Cowork"]
+    Context -.-> Local & Remote
+    Local -->|"Local stdio"| MCP["ServiceNow MCP<br/>Shared backend"]
     Remote -->|"Authenticated HTTP<br/>Scoped tools"| MCP
     MCP <-->|"API calls and readback"| ServiceNow["ServiceNow<br/>Account permissions<br/>Native rules"]
 ```
 
 Source calls use the configured ServiceNow account; the assistant composes the workflow.
+Write guards include schema, policy and version checks. The operation journal
+supports read-only recovery.
 
 ## Documentation
 
