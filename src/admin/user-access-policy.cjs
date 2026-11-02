@@ -114,7 +114,20 @@ function createUserAccessInspection({ source, records }) {
     const aclRows = await selectedRows("sys_security_acl", "sys_id", aclIds,
       ["sys_id", "sys_mod_count", "name", "operation", "type", "active", "admin_overrides",
         "decision_type", "applies_to", "security_attribute", "advanced", "condition", "script"]);
-    if (aclRows.length !== aclIds.length) throw new Error("Linked ACL definition is absent or unreadable.");
+    if (aclRows.length !== aclIds.length) {
+      const returned = new Set(aclRows.map(row => row.sys_id));
+      const missing = aclIds.filter(id => !returned.has(id)).sort();
+      const missingSet = new Set(missing);
+      const references = aclLinks.filter(link => missingSet.has(link.sys_security_acl));
+      throw Object.assign(new Error("Linked ACL definition is absent or unreadable."), { diagnostic: {
+        code: "linked_acl_definition_incomplete", table: "sys_security_acl", lookup: "sys_idIN",
+        expected_count: aclIds.length, returned_count: aclRows.length, missing_count: missing.length,
+        missing_acl_ids: missing.slice(0, 10), reference_count: references.length,
+        references: references.slice(0, 20).map(link => ({
+          link_id: link.sys_id, role_id: link.sys_user_role, acl_id: link.sys_security_acl,
+        })), truncated: missing.length > 10 || references.length > 20,
+      } });
+    }
     for (const acl of aclRows) {
       boolean(acl.active); boolean(acl.admin_overrides); boolean(acl.advanced);
       const { script, condition, applies_to, ...metadata } = acl;

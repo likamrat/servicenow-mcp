@@ -198,6 +198,31 @@ test("access policy is closed before user creation and detects closure, ACL, cal
   assert.equal(f.writes().length, 0);
 });
 
+test("missing linked ACLs remain a hard failure with bounded reference-only diagnostics", async t => {
+  for (const missingCount of [1, 12]) {
+    const f = fixture(t);
+    f.tables.sys_security_acl = [];
+    f.tables.sys_security_acl_role = Array.from({ length: missingCount }, (_, index) => ({
+      sys_id: id(200 + index), sys_mod_count: "0", sys_user_role: id(31), sys_security_acl: id(500 + index),
+    }));
+    await assert.rejects(f.admin.handle("inspect_user_access_policy", { group_id: id(20), role_id: id(30) }), error => {
+      assert.equal(error.message, "Linked ACL definition is absent or unreadable.");
+      assert.equal(error.diagnostic?.code, "linked_acl_definition_incomplete");
+      assert.equal(error.diagnostic.table, "sys_security_acl");
+      assert.equal(error.diagnostic.expected_count, missingCount);
+      assert.equal(error.diagnostic.returned_count, 0);
+      assert.deepEqual(error.diagnostic.missing_acl_ids, Array.from({ length: Math.min(10, missingCount) }, (_, index) => id(500 + index)));
+      assert.equal(error.diagnostic.references[0].link_id, id(200));
+      assert.equal(error.diagnostic.references[0].role_id, id(31));
+      assert.equal(error.diagnostic.truncated, missingCount > 10);
+      assert.doesNotMatch(JSON.stringify(error.diagnostic), /PRIVATE_|script|condition|password|token|principal/i);
+      return true;
+    });
+    assert.equal(f.writes().length, 0);
+    assert.equal(fs.existsSync(path.join(f.directory, "user-access-contract.json")), false);
+  }
+});
+
 test("delegation-capable closure is disclosed but denied unless the private policy explicitly permits it", async t => {
   const f = fixture(t);
   f.tables.sys_user_role[0].can_delegate = "true";

@@ -430,6 +430,14 @@ neither the fingerprint nor non-elevated flags establish absence of privilege.
 The runtime rechecks the evidence before assessment and before each source stage.
 Identity queries are bounded and batched, not unbounded user inventories.
 
+If linked ACL definitions are missing from the result, inspection still fails
+closed with `linked_acl_definition_incomplete`. Its diagnostic includes counts,
+at most ten missing ACL IDs and twenty referring link/role IDs, plus an explicit
+truncation flag. It includes no script, condition or credential content. Use
+that bounded evidence for authorized exact-reference/visibility diagnosis; it
+does not classify the target as deleted, authorize bypassing ACLs or permit a
+partial fingerprint to become policy.
+
 Administrative/elevated/scoped-admin or restricted-grantor roles are not
 supported, even through a containing role. Parented or externally managed
 groups are also blocked: their membership/role inheritance has not been
