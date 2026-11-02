@@ -21,25 +21,24 @@ with the permissions for your work.
 4. Complete the one-time connection setup in the [setup guide](docs/SETUP.md),
    then start a new chat. The guide also covers Cowork and other MCP clients.
 
-Already installed? **Update plugin**, then start a new chat.
+For updates, select **Update plugin** and start a new chat.
 
-Installation adds the plugin, not ServiceNow access. ServiceNow permissions
-and configured policies govern which actions are available.
+ServiceNow permissions and configured policies govern available actions.
 
 ## Try it
 
 Start with a lookup, then ask for the change you need:
 
 - “Find recent ServiceNow incidents about VPN.”
-- “Assign INC0012345 to Morgan Lee.”
 - “Find the ServiceNow user Morgan Lee.”
+- “Assign INC0012345 to Morgan Lee.”
 
 The incident number and person are illustrative; replace them with your own.
 
 ## Documentation
 
-- [Tool reference](docs/CAPABILITIES.md) — supported operations and limits.
-- [Documentation index](docs/README.md) — configuration, recovery and development.
+- [Tool reference](docs/CAPABILITIES.md): supported operations and limits.
+- [Documentation index](docs/README.md): configuration, recovery and development.
 
 ## Credits and license
 
