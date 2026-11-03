@@ -196,6 +196,12 @@ role/group block. Unknown or privileged access is not approved by ordinary
 account CRUD. Unexpected native access changes remain uncertain, even when the
 requested status was observed.
 
+Review conditional helper behavior and relevant source properties as well as
+the rule body. A membership-recompute acknowledgment does not approve any access
+the hook might add. The current lifecycle implementation requires unchanged
+access after these writes; it has no supported resolution action for unexpected
+native access changes. See [backlog #2](https://github.com/likamrat/servicenow-mcp/issues/2).
+
 After installation in the existing state directory, run the inspection again,
 then `local_admin_user_assess` for the intended exact ID. Use its per-action
 `eligibility`, current version and `required_native_effects` for the separately
@@ -284,6 +290,12 @@ later observations. A matching record found after response loss is an observatio
 not proof that the original create succeeded. Remote receipts are caller-owned;
 uncertainty holds are shared.
 
+`local_operation_status` is evidence-only. A later manual UI correction does
+not settle the original MCP receipt, and matching state does not clear an
+uncertainty hold. If no supported resolution exists, retain the original
+history and report the blocked operation or upgrade. Do not rewrite the journal,
+clear the hold, restore an older snapshot or force a restart.
+
 | Situation | Operator action |
 |---|---|
 | Interrupted operation leaves `operation.lock` | Establish its owning process and reconcile pending source effects before removing the lock. Preserve the journal. |
@@ -303,6 +315,11 @@ startup does not remove it. The four bounded ticket reads do not acquire that
 lock, so a successful search does not establish write/recovery readiness.
 
 ### Bulk user deletion
+
+The tools are shipped, but a real assessment encountered an unresolved source
+403 before producing a plan, with no deletion writes. Diagnostic provenance
+does not repair that failure. Source ACL diagnosis and authorized safe cleanup
+acceptance are deferred in [backlog #1](https://github.com/likamrat/servicenow-mcp/issues/1).
 
 Submit the authorized IDs and exact logins to
 `local_admin_user_delete_batch_assess`, with a new batch UUID and

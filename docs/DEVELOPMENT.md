@@ -27,8 +27,10 @@ Keep the release versions in `plugin.json` and
 `servicenow-mcp@servicenow-community` identity and the marketplace's `source: "./"`
 reference to the repository root.
 
-The plugin release, MCP `serverInfo` version and Agent Plugins schema version
-describe different things; a packaging update need not change protocol metadata.
+The plugin release, private npm package version, MCP `serverInfo` version and
+Agent Plugins schema version describe different things. A documentation/skill
+release bumps the plugin and marketplace together; it need not change the npm
+package or protocol metadata.
 Test the installed plugin's supported update path as well as local packaging.
 Do not change or copy a user's external provider binding or operation history.
 The MCP registration key is exactly `ServiceNow`; keep only that server entry.

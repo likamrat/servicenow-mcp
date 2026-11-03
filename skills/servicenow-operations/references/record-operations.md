@@ -53,6 +53,12 @@ Retain both the original error and later read-only observations. An uncertain,
 rejected or already-attempted result is not replay permission. If the source
 state remains inconclusive, stop related mutations and report the uncertainty.
 
+Read-only status does not resolve an uncertain lifecycle operation or clear its
+hold. No shipped resolution action handles unexpected native access changes.
+Keep that limitation explicit even after a manual UI correction or matching
+readback. Do not rewrite receipts/journals, restore an old snapshot or force a
+runtime restart to make an update possible.
+
 ## Account identity and protection
 
 Before any account change, resolve the requested identities and inspect their
@@ -92,8 +98,12 @@ notification preferences or restore sessions. Account for native primary-device
 creation and synchronization without assuming child cleanup.
 
 Use a fresh assessment's per-action eligibility and exact native-effect
-acknowledgments. Activation preserves lock; unlocking requires an active user
-and preserves notification/password/access state. Existing roles and groups
+acknowledgments. Activation targets only active state and preserves lock;
+unlocking requires an active user and targets only locked state. Neither payload
+requests notification, password or access changes. Native hooks can change
+access, so a generic recompute acknowledgment is not approval for added roles
+or memberships. Review conditional helper/property effects as well as rule
+fingerprints. Existing roles and groups
 need explicit coverage by current reviewed access policies, not removal to
 evade guards. Business responsibilities can block lock/deactivation without
 being a universal activation/unlock prohibition. Unexpected access changes

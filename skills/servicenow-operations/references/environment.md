@@ -70,3 +70,9 @@ replacing, tunneling or reconfiguring a server is separate work with its own
 authorization; it is not part of ordinary record access. Missing functionality
 is a concrete capability gap, not permission to install another backend,
 relax policy or bypass a host gate.
+
+Check repository release, installed plugin bytes and running backend revision
+separately. A plugin Update does not replace a separately hosted service.
+Preserve in-flight work and unresolved-operation guards; if no supported
+resolution exists, report the version gap without forcing alignment. Use a fresh
+context for discovery when supported, rather than demanding a whole-app restart.

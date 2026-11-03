@@ -113,7 +113,9 @@ operation-history directory. No credential re-enrollment, state migration or
 hosted-backend restart is part of this naming update.
 
 1. Finish in-flight operations before updating. Preserve original operation
-   IDs and resolve uncertain outcomes without replay.
+   IDs and inspect uncertain outcomes without replay. If an unresolved hold
+   prevents a safe update or runtime restart and no supported resolution exists,
+   keep the running installation and report the blocker.
 2. Select **Update plugin** on the existing installation. Do not uninstall it
    or add another MCP server. If files are in use, release the affected sessions
    through the app's supported controls after their work has finished.
@@ -139,6 +141,12 @@ share an operation-history directory, follow the
 [shared-policy upgrade requirements](OPERATIONS.md#native-account-and-managed-access-contracts)
 before installing new account-policy fields. Changing the registration does
 not change those policies or the Cowork tool contract.
+
+Check the installed plugin version and loaded files separately from the remote
+release, and record the revision of any separately running backend. An available
+Update is not an installed update. Do not clear journals, remove holds or force
+a shared-runtime restart to align versions. The desktop app has its own update
+channel; a plugin release does not establish that the app itself is current.
 
 ### Verify the loaded skills
 

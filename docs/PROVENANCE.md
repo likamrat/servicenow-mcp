@@ -21,8 +21,9 @@ dependencies.
 The seven operator skill files originate from the maintained repository's
 authored candidate `54bdb474f07841fa1ffc664ab83da5cfa257ff1a`, matching the
 portable-skills source accepted at `8790a8c832256a95e9d58317101dfae5628d6705`.
-The operations skill additionally describes shared semantic incident dispatch
-and its unchanged authorization/recovery limits.
+Subsequent revisions add incident notes, reviewed account/access operations and
+native bulk guidance while preserving authorization and recovery limits.
+Skill instructions do not add tools to the connected server.
 Private invocation evidence and installed bindings are not part of this source.
 
 The administrative adapters adapt previously authored local operator code:
@@ -62,7 +63,7 @@ predecessor assignment-only proposal's incident/person maps and fixed reference
 policy are not part of this interface. The thin clients do not own another
 ServiceNow backend or a token store.
 
-Generic user CRUD adds a separate reviewed ordinary-profile/contact path over
+Ordinary user-profile CRUD adds a separate reviewed profile/contact path over
 the same source/state/schema helpers. User deletion reuses the existing native
 administrative impact/deletion adapter. Directory attributes remain agent-supplied
 request data; no Graph/Work IQ client or authentication dependency was added.

@@ -68,6 +68,12 @@ boundary rather than claiming bulk support or silently changing execution paths.
 Read the referenced workflow for complete plan/effect review, bounded status
 pages, safe cancellation and original-ID recovery. A queued job is not success.
 
+Native bulk creation has completed real app jobs. Bulk deletion is implemented,
+but a real assessment stopped with a source 403 before a plan or deletion.
+Preserve that failure; tool availability and improved diagnostics do not repair
+the source ACL or establish cleanup readiness. Complete user-account lifecycle
+and original-operation recovery remain incomplete.
+
 When the connected interface exposes the semantic incident tools, use
 `get_incident_schema` for fields and `resolve_incident_assignee` for exact
 identities. Ambiguous or incomplete resolution is not a selection. Use
@@ -87,7 +93,7 @@ Use `get_incident_operation` with the original UUID for independent bounded
 readback. Unknown or not-observed notes remain uncertain, even if assignment
 is visible; do not retry an append, broaden journal reads or change source ACLs.
 
-For user CRUD, discover `get_user_schema`, `lookup_users`, `get_user`,
+For ordinary user profiles, discover `get_user_schema`, `lookup_users`, `get_user`,
 `create_user`, `update_user`, `assess_user_delete`, `delete_user` and
 `get_user_operation` when the connected interface exposes them. Directory/Work IQ
 context belongs to the agent's authorized source workflow; do not require the
@@ -115,8 +121,10 @@ All actual source creation/access/assignment must be MCP tool invocations.
 If a policy or caller permission is unavailable, explain that precise gate
 before creating avoidable accounts. For deletion, retain the
 caller-bound assessment and all native effects, version/hash and confirmation
-requirements. Recover uncertain writes through the original user-operation ID,
-never a new caller or UUID.
+requirements. Inspect uncertain writes through the original user-operation ID,
+never a new caller or UUID. Read-only status cannot clear a hold. If no supported
+resolution action exists, report the gap and preserve the original receipt;
+a manual UI correction does not settle it.
 
 For UI work, use the host's browser/app guidance and compare the intended
 instance and target with the source identity. UI is not a workaround for a

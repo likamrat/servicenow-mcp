@@ -63,11 +63,11 @@ block
 API calls and readback use the configured ServiceNow account; the assistant
 composes the workflow.
 Write guards include schema, policy and version checks. The operation journal
-supports read-only recovery.
+supports read-only inspection; it does not resolve every uncertain write.
 
 ## Documentation
 
-- [Supported operations](docs/CAPABILITIES.md): available tasks, tools and limits.
+- [Supported operations](docs/CAPABILITIES.md): available tasks, native verification and deferred gaps.
 - [Documentation index](docs/README.md): operator policies, recovery and development.
 
 ## Credits and license
