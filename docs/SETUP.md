@@ -140,6 +140,22 @@ share an operation-history directory, follow the
 before installing new account-policy fields. Changing the registration does
 not change those policies or the Cowork tool contract.
 
+### Verify the loaded skills
+
+The plugin supplies `servicenow-operations` and `servicenow-themes`, including
+their referenced instructions. After Update, check the source shown when each
+skill loads: it should be this installed plugin's `skills` directory.
+The operations skill routes multi-user requests to the native batch tools;
+Cowork retains its separate scoped tool set.
+
+A same-named personal or project skill can take precedence. Plugin Update does
+not update that independent copy. In the app's skill management, choose the
+plugin-provided entry and disable the older standalone entry if source-specific
+controls are available. If the controls affect both copies, stop and resolve
+which copy to retain through the supported skill-management flow; do not delete
+or overwrite custom skills automatically. Verify the actual loaded path after
+that choice. Offline package checks cannot establish which copy a session loads.
+
 ### If the connection fails
 
 | What you see | What to do |

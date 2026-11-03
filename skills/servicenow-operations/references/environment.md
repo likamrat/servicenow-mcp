@@ -42,11 +42,28 @@ all four. A current session can have stale discovery; use supported refresh or
 a fresh context when needed, not a second server or guessed provider namespace.
 Explain authentication failures using the actual server name and failure reason.
 
+## Check registration and skill origin
+
+The plugin registers its native server as `ServiceNow`; `servicenow-portable`
+is the old registration. Use the actual discovered namespace, not a guessed
+prefix. A real new app invocation must show **ServiceNow** to establish visible
+naming acceptance; protocol metadata alone is insufficient.
+
+Check the loaded skill's reported base directory after an update. A same-named
+personal or project skill can supply older instructions instead of the plugin
+copy; updating the plugin does not update that separate copy. Resolve the
+duplicate through the host's supported skill management with the user's choice,
+preserving custom content. Do not overwrite or delete global skills, edit host
+caches or create duplicate registrations. An intentionally disabled plugin,
+MCP server or skill is not evidence that the implementation lacks the capability.
+
 ## Separate service surfaces
 
-The read-only incident/change scenario and an administrative MCP are separate
-capability surfaces. Do not expose an expanded backend as the scenario endpoint,
-or infer backend mutation permission from a read-only scenario installation.
+The authenticated Cowork interface has its own 22-tool incident/profile/reviewed
+access contract and delegated scopes. Native bulk user operations are not in it.
+Other installations may expose only read-only incident/change tools. Do not
+infer native capabilities or mutation permission from either restricted surface,
+or expose an expanded backend as a replacement endpoint.
 
 Use existing runtime ownership and status procedures. Starting, stopping,
 replacing, tunneling or reconfiguring a server is separate work with its own

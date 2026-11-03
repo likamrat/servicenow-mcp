@@ -34,6 +34,32 @@ test("marketplace release preserves plugin identity and declares one exactly nam
   }, "Keep the protected entrypoint; do not invent display-name fields");
 });
 
+test("packaged operations skill routes both native bulk families and retains resolvable references", () => {
+  const root = path.join(__dirname, "..", "skills");
+  const operations = fs.readFileSync(path.join(root, "servicenow-operations", "SKILL.md"), "utf8");
+  const cowork = new Set(require("../contracts/cowork-authenticated-tools.json").tools.map(tool => tool.name));
+  for (const name of ["local_admin_user_delete_batch_assess", "local_admin_user_delete_batch",
+    "local_admin_user_delete_batch_status", "local_admin_user_delete_batch_cancel",
+    "assess_user_bulk_create", "start_user_bulk_create", "get_user_bulk_create", "cancel_user_bulk_create"]) {
+    assert.ok(operations.includes("`" + name + "`"), `Main packaged skill must route ${name}`);
+    assert.equal(cowork.has(name), false, `${name} remains native-only`);
+  }
+  for (const name of ["servicenow-operations", "servicenow-themes"]) {
+    const directory = path.join(root, name);
+    const files = [path.join(directory, "SKILL.md"),
+      ...fs.readdirSync(path.join(directory, "references")).map(file => path.join(directory, "references", file))];
+    for (const file of files) {
+      const text = fs.readFileSync(file, "utf8");
+      for (const [, target] of text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+        if (/^https?:|^#/.test(target)) continue;
+        const resolved = path.resolve(path.dirname(file), target.split("#")[0]);
+        assert.ok(resolved.startsWith(directory + path.sep), "Skill resources remain inside the package");
+        assert.ok(fs.statSync(resolved).isFile(), `${name} reference resolves: ${target}`);
+      }
+    }
+  }
+});
+
 test("renamed registration reuses the protected binding, policy and journal without ambient source credentials", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "servicenow-binding-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

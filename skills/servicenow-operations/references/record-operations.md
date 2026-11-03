@@ -56,9 +56,11 @@ state remains inconclusive, stop related mutations and report the uncertainty.
 ## Account identity and protection
 
 Before any account change, resolve the requested identities and inspect their
-current state. Protect the current operator and explicit retention holds,
-including native cascades into protected accounts. A capability question or
-example is not an instruction to act on those names.
+current state. For cleanup, establish the exact keep-set from the user's scope
+and source identities, not an email domain alone. Protect retained staff, the
+current operator, administrators, system/integration identities and indispensable
+dependencies, including native cascades. A capability question or example is
+not an instruction to act on those names.
 
 For names rather than IDs, use minimal `sys_user` fields such as `sys_id`,
 `user_name`, `name`, `first_name`, `last_name` and `sys_mod_count`. Resolve an
@@ -97,13 +99,20 @@ evade guards. Business responsibilities can block lock/deactivation without
 being a universal activation/unlock prohibition. Unexpected access changes
 or a lost write response remain uncertain, even with matching source readback.
 
-For an authorized supplied roster, use `assess_user_bulk_create` when available,
-then inspect the complete `get_user_bulk_create` assessment before
-`start_user_bulk_create`. Bind existing accounts by exact ID, current version
-and preserved login; blank email does not mean absent. Request active/unlocked
-status only when authorized and qualified by the current account/access policies.
-Keep confirmed stage receipts if a later stage fails. Use
-`cancel_user_bulk_create` for a safe stop, never replay after uncertainty.
+For an authorized supplied roster, call `assess_user_bulk_create` with one new
+`batch_id`, then inspect every page of the `get_user_bulk_create` assessment.
+Bind existing accounts with `existing: {sys_id, expected_mod_count}` and their
+preserved login; blank email does not mean absent. Resolve collisions instead of
+creating duplicates or silently omitting staff.
+
+Omitted `final_state` preserves existing lifecycle state and creates missing
+accounts inactive and locked. For explicitly requested activation and unlocking,
+use `final_state: {active: true, locked_out: false}`. The current reviewed account
+policy must match, and existing roles/groups need real `reviewedAccessPolicies`
+coverage with activation enabled. Do not grant or strip access to make this pass.
+Use `start_user_bulk_create` only with the original batch ID, exact
+`expected_assessment_sha256` and complete disclosed native-effect acknowledgments.
+Keep confirmed stage receipts if a later stage fails; do not roll back or replay.
 
 Choose the supported deletion path for the requested account. A disposable
 cohort restriction belongs to that tool, not to all ServiceNow users. An
@@ -118,17 +127,35 @@ relationship identities/versions, native effects, rule versions and coverage.
 Assessment is not approval or effective source permission.
 
 For an authorized set, prefer the native bulk tools when available instead of
-an agent-side loop of individual deletes. Submit exact IDs/logins and preservation
-IDs to `local_admin_user_delete_batch_assess`; review its completed plan, all
-dependency summaries and any material native effects. Explicit dictionary
+an agent-side loop of individual deletes. Submit targets with `sys_id` and
+`expected_user_name`, plus the keep-set in `preserve_user_ids`, to
+`local_admin_user_delete_batch_assess`. Review its completed plan, all dependency
+summaries and any material native effects. Explicit dictionary
 cascades can include business records and their own dependents. Do not treat
 deleting a user as permission to override an existing business-record hold.
-Execute with `local_admin_user_delete_batch` and the reviewed plan hash, then
+Execute with `local_admin_user_delete_batch`, the original batch ID, a new
+operation ID and the exact `expected_plan_sha256` plus disclosed effects, then
 read `local_admin_user_delete_batch_status` for per-user outcomes. It runs targets
 sequentially inside the MCP and stops on uncertainty. Use
 `local_admin_user_delete_batch_cancel` to request a stop between operations.
 Keep the MCP process alive and preserve its original batch/user operation IDs;
 interrupted jobs must not be replayed.
+
+Both batch families return before their work finishes. Read status at bounded
+intervals rather than a tight loop. Follow deletion's `next_offset` or creation's
+`has_more` to inspect the full supplied set; full deletion evidence is limited
+to ten items per page. Retain the immutable assessment/plan hash and all original
+batch, target and stage operation IDs. A new job or UUID cannot resume an
+attempted or uncertain write after interruption or restart.
+
+Use the matching cancel tool to request a safe stop: it does not interrupt an
+in-flight source call or undo confirmed stages. Inspect terminal status before
+releasing the MCP process. Report created, corrected, already-matching, blocked,
+drifted, unattempted and uncertain outcomes separately. A settled parent journal
+or `completed` deletion job does not mean every user changed; creation's final
+roster readback is still not an atomic source snapshot.
+Refresh inventory and versions after UI or other-client changes. External
+deletions are not MCP-confirmed effects.
 
 Read all required impact pages according to the tool's contract. A page size
 is not a total eligibility cap. Hidden/dynamic relationships, unreadable or

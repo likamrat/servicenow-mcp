@@ -2,11 +2,12 @@
 name: servicenow-operations
 description: >-
   Plan and perform ServiceNow backend record and account administration.
-  Use for record reads or writes, user/group/role lifecycle and access changes,
-  configuration work, and MCP connection or authentication failures, including
-  safety and recovery planning before execution. Discover the connected
-  installation's capabilities and reuse its approved authentication. Separate
-  backend administration from the restricted Cowork incident interface.
+  Use for record reads or writes, single-user or multi-user provisioning,
+  staff-roster reconciliation, bulk cleanup, activation/unlock, group/role
+  access changes, configuration and MCP connection failures. Include safety
+  and recovery planning before execution. Discover the connected installation's
+  capabilities and reuse its approved authentication. Keep native bulk
+  administration separate from Cowork's scoped incident/profile/access tools.
 license: MIT
 ---
 
@@ -49,6 +50,24 @@ changes, and when diagnosing failed source operations. It covers exact-name
 resolution, current-operator protection, impact assessment, source authority,
 guarded writes and uncertain-outcome recovery.
 
+For multi-user requests, including a supplied staff roster or cleanup set, use
+the native batch family when available even if the user did not say "bulk".
+Resolve identities and protections first, assess the complete authorized set,
+then start one reviewed job rather than an agent-side loop of single-user
+writes. Identity reads may still be per user. Keep single-user operations for
+single-user requests.
+
+| Native request | Assess | Start | Status | Cancel |
+|---|---|---|---|---|
+| Create or reconcile a roster | `assess_user_bulk_create` | `start_user_bulk_create` | `get_user_bulk_create` | `cancel_user_bulk_create` |
+| Delete an authorized user set | `local_admin_user_delete_batch_assess` | `local_admin_user_delete_batch` | `local_admin_user_delete_batch_status` | `local_admin_user_delete_batch_cancel` |
+
+These eight tools are native-only, not part of Cowork's 22-tool contract. Check
+the actual client's catalog; if the batch family is unavailable, report that
+boundary rather than claiming bulk support or silently changing execution paths.
+Read the referenced workflow for complete plan/effect review, bounded status
+pages, safe cancellation and original-ID recovery. A queued job is not success.
+
 When the connected interface exposes the semantic incident tools, use
 `get_incident_schema` for fields and `resolve_incident_assignee` for exact
 identities. Ambiguous or incomplete resolution is not a selection. Use
@@ -80,17 +99,18 @@ Ordinary profile updates exclude credentials, login/status and role/group values
 Creation is inactive, locked and notification-disabled and reports assignee
 readiness as not evaluated. Retain that identity if later eligibility or
 assignment is blocked. Do not activate or grant ACL-bearing roles through a
-profile-field workaround. When exposed, use `inspect_user_access_policy` before
-creating a user to confirm an enabled reviewed definition policy and the caller's
-access scope. After source identity is established, use `assess_user_access` then
+profile-field workaround. For a workflow that also requests access, use
+`inspect_user_access_policy` when exposed before creating a user to confirm an
+enabled reviewed definition policy and the caller's access scope. After source
+identity is established, use `assess_user_access` then
 `apply_user_access` with the exact assessment/effects. These generic tools apply
 only configured missing memberships/roles and activation if explicitly required,
 not arbitrary access. Inspect `get_user_access_operation` after partial failure;
 retain the created user and confirmed stages without a new-UUID replay.
 
-Use natural prompts such as “Assign this incident to Morgan Lee.” Resolve
-previously unseen people from the authorized directory at request time; no
-preloaded person list or manual source provisioning is part of the workflow.
+Use natural prompts such as “Assign this incident to Morgan Lee.” Use the user's
+supplied roster when provided; consult a separately authorized directory only
+when needed. No person list or instance binding is built into these skills.
 All actual source creation/access/assignment must be MCP tool invocations.
 If a policy or caller permission is unavailable, explain that precise gate
 before creating avoidable accounts. For deletion, retain the
