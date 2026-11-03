@@ -32,7 +32,7 @@ const tools = [
 const ref = value => value && typeof value === "object" ? value.value : value;
 const truth = value => value === true || value === "true" || value === "1";
 
-function createRecords({ source, state, beforeWrite }) {
+function createRecords({ source, state, beforeWrite, verifyWorkNote }) {
   const { list, request, instance } = source;
   function readable(name) {
     if (typeof name !== "string" || !NAME.test(name)) throw new Error("Invalid table identifier.");
@@ -130,6 +130,13 @@ function createRecords({ source, state, beforeWrite }) {
     for (const [field, value] of Object.entries(values)) {
       permitted(schema, field, true);
       const spec = schema.fields[field];
+      if (/journal/i.test(spec.type) || verifyWorkNote && field === "work_notes") {
+        if (!(verifyWorkNote && schema.table === "incident" && !creating &&
+            field === "work_notes" && spec.type === "journal_input" && !spec.readOnlyMetadata))
+          throw new Error("Journal fields require a supported append/readback path; use update_incident for work_notes.");
+        if (typeof value !== "string" || !value.trim())
+          throw new Error("A work note must be a nonempty string; it cannot clear or replace journal history.");
+      }
       if (spec.type === "boolean" && value !== null && ![true, false, "true", "false", "0", "1"].includes(value))
         throw new Error("Boolean source fields require an explicit boolean or source boolean string.");
       if (typeof value === "string" && value.length > Math.min(spec.maxLength || 20000, 20000)) throw new Error("Source field length exceeded.");
@@ -143,7 +150,7 @@ function createRecords({ source, state, beforeWrite }) {
   }
   function matches(schema, wanted, row) {
     return Boolean(row) && typeof row.sys_mod_count === "string" && /^\d+$/.test(row.sys_mod_count) &&
-      Object.entries(wanted).every(([field, value]) => Object.hasOwn(row, field) &&
+      Object.entries(wanted).filter(([field]) => !(verifyWorkNote && field === "work_notes")).every(([field, value]) => Object.hasOwn(row, field) &&
         (value === null ? row[field] === null || row[field] === "" :
           schema.fields[field]?.type === "boolean" ? [true, false, "true", "false", "0", "1"].includes(row[field]) &&
             truth(value) === truth(row[field]) : String(value) === String(row[field])));
@@ -168,7 +175,8 @@ function createRecords({ source, state, beforeWrite }) {
     if (state.isAttempted(args.operation_id)) throw new Error("Operation UUID already attempted; reconcile without replay.");
     if (state.unresolved(args.table, args.sys_id)) throw new Error("Earlier source outcome unresolved; a new UUID cannot replay it.");
     if (!deleting) validateValues(schema, args.values, creating);
-    const existing = creating ? null : await get(schema, args.sys_id, deleting ? [] : Object.keys(args.values));
+    const selectedValues = deleting ? [] : Object.keys(args.values).filter(field => !(verifyWorkNote && field === "work_notes"));
+    const existing = creating ? null : await get(schema, args.sys_id, selectedValues);
     if (!creating && (!existing || existing.sys_mod_count !== args.expected_mod_count)) throw new Error("Record absent or changed since your read.");
     const related = args.verify_related || [];
     for (const item of related) await discover(item.table);
@@ -183,7 +191,7 @@ function createRecords({ source, state, beforeWrite }) {
     const meta = { action: name, table: args.table, sys_id: args.sys_id, operation_id: args.operation_id, correlation };
     if (beforeWrite) await beforeWrite();
     state.claim(args.operation_id, meta);
-    let response, failure, row;
+    let response, failure, row, fieldObservation = { status: "unknown" };
     try {
       response = await request(creating ? "POST" : deleting ? "DELETE" : "PATCH", args.table,
         { sysparm_display_value: "false", sysparm_exclude_reference_link: "true" }, args.values, args.sys_id);
@@ -193,20 +201,27 @@ function createRecords({ source, state, beforeWrite }) {
       if (failure?.diagnostic?.status === 401) throw failure;
       if (creating && response?.result?.sys_id) {
         if (!ID.test(response.result.sys_id)) throw new Error("Invalid created identity.");
-        row = await get(schema, response.result.sys_id, Object.keys(args.values));
+        row = await get(schema, response.result.sys_id, selectedValues);
       } else if (creating && correlation) {
-        const selected = select(schema, Object.keys(args.values));
+        const selected = select(schema, selectedValues);
         const rows = await list(args.table, correlation, selected.join(","), 2);
         if (rows.length !== 1) throw new Error("Create correlation not uniquely confirmed.");
         row = linked(args.table, rows[0], selected);
-      } else if (!creating) row = await get(schema, args.sys_id, deleting ? [] : Object.keys(args.values));
+      } else if (!creating) row = await get(schema, args.sys_id, selectedValues);
+      const fieldsMatch = deleting ? !row : matches(schema, args.values, row);
+      fieldObservation = { status: selectedValues.length ? fieldsMatch ? "observed" : "not_observed" : "not_requested" };
+      if (verifyWorkNote) await verifyWorkNote();
       if (failure?.diagnostic?.status >= 400 && failure.diagnostic.status < 500)
         throw new Error("Source rejected the write; later state cannot establish attribution.");
-      if (deleting ? Boolean(row) : !matches(schema, args.values, row)) throw new Error("Requested source state not confirmed.");
+      if (!fieldsMatch) throw new Error("Requested source state not confirmed.");
     } catch (error) {
       state.record({ ...meta, status: "uncertain", sys_id: response?.result?.sys_id || args.sys_id, reason: error.message, diagnostic: failure?.diagnostic });
+      if (fieldObservation.status === "unknown") fieldObservation = { ...fieldObservation,
+        error: error.message, diagnostic: error.diagnostic };
       error.diagnostic = failure?.diagnostic;
-      error.outcome = { sys_id: row?.sys_id || response?.result?.sys_id || args.sys_id, observed: row };
+      error.outcome = { sys_id: row?.sys_id || response?.result?.sys_id || args.sys_id, observed: row,
+        ...(verifyWorkNote ? { record_fields: fieldObservation } : {}),
+        ...(failure ? { original_error: { message: failure.message, diagnostic: failure.diagnostic } } : {}) };
       throw error;
     }
     const relatedRecords = [];
@@ -216,6 +231,7 @@ function createRecords({ source, state, beforeWrite }) {
     }
     const result = { table: args.table, sys_id: row?.sys_id || args.sys_id, record: row || null,
       source_url: row?.source_url || existing?.source_url, operation_id: args.operation_id, reconciledAfterError: Boolean(failure),
+      ...(verifyWorkNote ? { record_fields: fieldObservation } : {}),
       ...(failure ? { original_error: { message: failure.message, diagnostic: failure.diagnostic } } : {}),
       ...(deleting ? { deleted: true, absent: true, cleanup_complete: false, relatedRecords } : {}) };
     state.record({ ...meta, status: "confirmed", sys_id: result.sys_id, relatedRecords });

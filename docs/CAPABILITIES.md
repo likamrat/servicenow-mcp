@@ -29,6 +29,23 @@ For assignment, resolve the exact ServiceNow user and use its `sys_id` in
 `expected_mod_count`. `null` or `""` clears the assignee. The assignment group
 is preserved unless explicitly changed. An email is not an assignee ID.
 
+For an authorized handoff with findings, include a nonempty
+`update_incident.values.work_notes` string, optionally in the same patch as
+`assigned_to`. The source field must be `journal_input`; its discovered length
+limit applies. This appends one work note through the incident, never writes
+the journal table or substitutes a description overwrite. Other journal fields
+(including comments), journal creation and generic scalar journal writes are
+not supported.
+
+The result separates `record_fields` from `work_note`. Confirmation requires an
+advanced incident version and independent observation of a new, exactly matching
+journal entry, excluding entries visible before the patch. Assignment alone is
+not note confirmation. `get_incident_operation` re-reads the original entry by
+ID when known; otherwise it inspects at most 20 recent work notes plus one
+overflow indicator for that exact incident. Only a matching requested note is
+returned, not unrelated history. `not_observed`, `unknown` and `limitReached`
+retain ACL/window uncertainty; they never authorize another append.
+
 Assignee resolution does not provision users or establish source eligibility.
 Ambiguous/incomplete results require clarification. Actual reference qualifiers,
 ACLs and native rules govern eligibility; the server does not execute dynamic

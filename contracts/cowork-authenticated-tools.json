@@ -185,7 +185,7 @@
     },
     {
       "name": "update_incident",
-      "description": "Patch only requested incident business fields after an exact number/version preflight. Use the current sys_mod_count from get_incident. Set/change assigned_to to a resolved sys_user ID, or null/empty to clear it. Assignment group is preserved unless explicitly included. Reference existence does not establish assignment eligibility; source ACLs and rules remain authoritative. Preflight is not atomic CAS. Normal source effects run. Preserve denied, partial or uncertain outcomes; never retry a sent operation under any UUID.",
+      "description": "Patch only requested incident business fields after an exact number/version preflight using the current sys_mod_count from get_incident. assigned_to takes a resolved sys_user ID or null/empty to clear; assignment group is preserved unless included. To add findings, set values.work_notes to one nonempty note within the discovered field length, optionally together with assigned_to in the same patch. Requires source journal_input metadata. This appends, never replaces description/history. Independent bounded journal readback returns work_note separately from record_fields; assignment alone is not note confirmation. Comments/other journal fields are unsupported. Source ACLs/rules and normal effects apply; reference existence is not eligibility. Not atomic CAS. Keep the original UUID and inspect get_incident_operation after partial/unknown results; never retry a sent append under any UUID.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -270,7 +270,7 @@
     },
     {
       "name": "get_incident_operation",
-      "description": "Read this authenticated requester's own original incident-operation receipt and, when its identity is known, current source state. Does not replay writes, clear holds or attribute later matching state to an uncertain request. Source visibility limits apply; parent absence does not prove complete cleanup.",
+      "description": "Read this requester's own original incident-operation receipt and current source state. For a work-note append, independently re-read its exact observed entry, or search a bounded 20-entry work-note window on that incident when the entry is unknown. Returns only the requested matching new note, with explicit observed/not_observed/unknown evidence and limitReached, not unrestricted journal history. Source ACLs apply; not_observed is not proof of absence. Does not replay writes, clear holds, or upgrade an uncertain receipt because later state matches. Parent absence does not prove complete cleanup.",
       "annotations": {
         "readOnlyHint": true,
         "title": "Read incident operation outcome"

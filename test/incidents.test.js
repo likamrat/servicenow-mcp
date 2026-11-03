@@ -11,6 +11,7 @@ function fixture(t, { beforeRead } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "servicenow-incidents-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const incident = { sys_id: id("a"), number: "INC0000001", short_description: "Synthetic incident",
+    description: "Preserve the investigation context.", work_notes: "",
     assigned_to: "", assignment_group: id("b"), sys_mod_count: "0" };
   const users = [
     { sys_id: id("c"), user_name: "avery@example.invalid", name: "Avery Example", first_name: "Avery",
@@ -19,7 +20,9 @@ function fixture(t, { beforeRead } = {}) {
       last_name: "Example", email: "blair@example.invalid", active: "true", sys_mod_count: "0" },
   ];
   const requests = [];
-  const mode = { denied: false, responseLoss: false, groupChange: false, ignoreValues: false, failReadback: false };
+  const notes = [];
+  const mode = { denied: false, responseLoss: false, groupChange: false, ignoreValues: false, failReadback: false,
+    suppressNote: false, denyJournal: false, failJournalReadback: false };
   let present = true;
   let written = false;
   const fetchImpl = async (raw, options) => {
@@ -40,11 +43,21 @@ function fixture(t, { beforeRead } = {}) {
       { sys_id: id("2"), name: "task", element: "assigned_to", internal_type: "reference", reference: "sys_user", max_length: "32" },
       { sys_id: id("3"), name: "task", element: "assignment_group", internal_type: "reference", reference: "sys_user_group", max_length: "32" },
       { sys_id: id("4"), name: "task", element: "number", internal_type: "string", max_length: "40" },
+      { sys_id: id("5"), name: "task", element: "work_notes", internal_type: "journal_input", max_length: "4000" },
+      { sys_id: id("6"), name: "task", element: "description", internal_type: "string", max_length: "4000" },
     ];
     else if (table === "sys_user") {
       const [field, value] = query.split("=");
       rows = users.filter(user => user[field] === value);
     } else if (table === "sys_user_group") rows = [{ sys_id: id("b") }];
+    else if (table === "sys_journal_field") {
+      if (mode.denyJournal || written && mode.failJournalReadback)
+        return Response.json({ error: { message: "Journal visibility denied" } }, { status: 403 });
+      rows = notes.filter(row => query.includes(`element_id=${row.element_id}`) &&
+        query.includes(`element=${row.element}`) && (!query.includes("^sys_id=") || query.includes(`^sys_id=${row.sys_id}`)))
+        .sort((a, b) => b.sys_created_on.localeCompare(a.sys_created_on) || b.sys_id.localeCompare(a.sys_id))
+        .slice(0, Number(url.searchParams.get("sysparm_limit")));
+    }
     else if (table === "incident") {
       if (options.method === "POST") {
         Object.assign(incident, values);
@@ -54,7 +67,10 @@ function fixture(t, { beforeRead } = {}) {
         return Response.json({ result: incident });
       }
       if (options.method === "PATCH") {
-        if (!mode.ignoreValues) Object.assign(incident, values);
+        if (!mode.ignoreValues) Object.assign(incident, Object.fromEntries(Object.entries(values).filter(([field]) => field !== "work_notes")));
+        if (values.work_notes && !mode.suppressNote) notes.push({ sys_id: (notes.length + 1).toString(16).padStart(32, "0"),
+          name: "incident", element: "work_notes", element_id: incident.sys_id, value: values.work_notes,
+          sys_created_on: "2026-01-02 12:00:00" });
         incident.sys_mod_count = String(Number(incident.sys_mod_count) + 1);
         if (mode.groupChange) incident.assignment_group = id("9");
         written = true;
@@ -71,9 +87,131 @@ function fixture(t, { beforeRead } = {}) {
   };
   const config = { instance: "https://service.example.invalid", username: "operator",
     password: "synthetic-only", directory, fetchImpl };
-  return { admin: createAdmin(config), restart: () => createAdmin(config), incident, users, requests, mode,
+  return { admin: createAdmin(config), restart: () => createAdmin(config), incident, users, requests, notes, mode,
     writes: () => requests.filter(row => row.method !== "GET") };
 }
+
+test("incident handoff appends a work note and independently reads only that new entry without overwriting description", async t => {
+  const f = fixture(t);
+  const operation_id = randomUUID();
+  const value = "Observed delays; routing remains a hypothesis.\nNext: check the service path.";
+  f.notes.push({ sys_id: id("e"), name: "task", element: "work_notes", element_id: f.incident.sys_id,
+    value, sys_created_on: "2026-01-01 12:00:00" });
+  const result = await f.admin.handle("update_incident", { number: f.incident.number,
+    expected_mod_count: "0", values: { assigned_to: f.users[0].sys_id, work_notes: value }, operation_id }, "requester-a");
+  assert.equal(result.status, "confirmed");
+  assert.equal(result.record.assigned_to, f.users[0].sys_id);
+  assert.equal(result.assignment_group_preserved, true);
+  assert.equal(result.work_note.status, "observed");
+  assert.equal(result.work_note.entry.value, value);
+  assert.notEqual(result.work_note.entry.sys_id, id("e"), "An existing identical note is not append evidence");
+  assert.equal(f.incident.description, "Preserve the investigation context.");
+  assert.equal(f.notes.length, 2);
+  assert.deepEqual(f.writes().map(row => [row.table, row.method, row.values]), [
+    ["incident", "PATCH", { assigned_to: f.users[0].sys_id, work_notes: value }],
+  ]);
+  for (let i = 0; i < 25; i++) f.notes.push({ sys_id: (100 + i).toString(16).padStart(32, "0"),
+    name: "incident", element: "work_notes", element_id: f.incident.sys_id,
+    value: "Unrelated later note", sys_created_on: "2026-01-03 12:00:00" });
+  const recovery = await f.restart().handle("get_incident_operation", { operation_id }, "requester-a");
+  assert.deepEqual(recovery.work_note.entry, result.work_note.entry);
+  assert.equal(recovery.unresolved_hold, false);
+  const reads = f.requests.length;
+  await assert.rejects(f.admin.handle("get_incident_operation", { operation_id }, "requester-b"), /not available/);
+  assert.equal(f.requests.length, reads);
+});
+
+test("lost handoff response and failed record readback retain the original error and recover notes without replay", async t => {
+  const f = fixture(t);
+  f.mode.responseLoss = true;
+  f.mode.failReadback = true;
+  const args = { number: f.incident.number, expected_mod_count: "0",
+    values: { assigned_to: f.users[0].sys_id, work_notes: "Retain this exact finding." }, operation_id: randomUUID() };
+  await assert.rejects(f.admin.handle("update_incident", args, "requester-a"), error => {
+    assert.equal(error.outcome.status, "uncertain");
+    assert.equal(error.outcome.work_note.status, "observed");
+    assert.equal(error.outcome.record_fields.status, "unknown");
+    assert.match(error.outcome.original_error.message, /transport failed/);
+    return true;
+  });
+  f.mode.failReadback = false;
+  const restarted = f.restart();
+  const result = await restarted.handle("get_incident_operation", { operation_id: args.operation_id }, "requester-a");
+  assert.equal(result.status, "uncertain");
+  assert.equal(result.work_note.entry.value, args.values.work_notes);
+  assert.equal(result.current.record.assigned_to, f.users[0].sys_id);
+  assert.equal(result.unresolved_hold, true);
+  for (const operation_id of [args.operation_id, randomUUID()]) await assert.rejects(restarted.handle("update_incident",
+    { ...args, expected_mod_count: "1", operation_id }, "requester-a"), /already|unresolved/);
+  assert.equal(f.writes().length, 1);
+});
+
+test("partial handoffs distinguish assignment and note observations, and journal denial never causes a fallback write", async t => {
+  for (const [mode, fields, note] of [
+    ["suppressNote", "observed", "not_observed"],
+    ["ignoreValues", "not_observed", "observed"],
+    ["failJournalReadback", "observed", "unknown"],
+    ["denyJournal", "not_sent", "not_sent"],
+  ]) {
+    const f = fixture(t);
+    f.mode[mode] = true;
+    const work_notes = "The original note is not new append evidence.";
+    f.notes.push({ sys_id: id("e"), name: "incident", element: "work_notes", element_id: f.incident.sys_id,
+      value: work_notes, sys_created_on: "2026-01-01 12:00:00" });
+    const operation_id = randomUUID();
+    await assert.rejects(f.admin.handle("update_incident", { number: f.incident.number, expected_mod_count: "0",
+      values: { assigned_to: f.users[0].sys_id, work_notes }, operation_id }, "requester-a"), error => {
+      assert.equal(error.outcome.record_fields.status, fields, mode);
+      assert.equal(error.outcome.work_note.status, note, mode);
+      assert.equal(error.outcome.status, mode === "denyJournal" ? "not_sent" : "uncertain", mode);
+      if (mode === "failJournalReadback") assert.equal(error.outcome.work_note.diagnostic.status, 403);
+      return true;
+    });
+    const result = await f.admin.handle("get_incident_operation", { operation_id }, "requester-a");
+    assert.equal(result.unresolved_hold, mode !== "denyJournal");
+    assert.equal(f.writes().length, mode === "denyJournal" ? 0 : 1);
+    assert.equal(f.incident.description, "Preserve the investigation context.");
+  }
+});
+
+test("work-note input and visibility bounds fail closed without scalar or description fallbacks", async t => {
+  const f = fixture(t);
+  for (const work_notes of ["", " \n ", null, 123, "x".repeat(4001)]) await assert.rejects(f.admin.handle("update_incident", {
+    number: f.incident.number, expected_mod_count: "0", values: { work_notes }, operation_id: randomUUID(),
+  }), /nonempty|length/);
+  await assert.rejects(f.admin.handle("local_record_update", { table: "incident", sys_id: f.incident.sys_id,
+    expected_mod_count: "0", values: { work_notes: "Cannot use scalar confirmation" }, operation_id: randomUUID() }), /append\/readback/);
+  await assert.rejects(f.admin.handle("create_incident", {
+    values: { short_description: "Not a supported journal creation path", work_notes: "No scalar confirmation" },
+    operation_id: randomUUID(),
+  }), /append\/readback/);
+  assert.equal(f.writes().length, 0);
+  const noteOnly = await f.admin.handle("update_incident", { number: f.incident.number, expected_mod_count: "0",
+    values: { work_notes: "A standalone work note." }, operation_id: randomUUID() });
+  assert.equal(noteOnly.status, "confirmed");
+  assert.equal(noteOnly.work_note.entry.value, "A standalone work note.");
+  assert.equal(noteOnly.record_fields.status, "not_requested");
+  assert.equal(noteOnly.assignment_group_preserved, true);
+  assert.equal(f.incident.assigned_to, "");
+
+  let noteReads = 0;
+  const crowded = fixture(t, { beforeRead: async table => {
+    if (table !== "sys_journal_field" || ++noteReads !== 2) return;
+    for (let i = 0; i < 21; i++) crowded.notes.push({ sys_id: (100 + i).toString(16).padStart(32, "0"),
+      name: "incident", element: "work_notes", element_id: crowded.incident.sys_id,
+      value: "Concurrent unrelated note", sys_created_on: "2026-01-03 12:00:00" });
+  } });
+  await assert.rejects(crowded.admin.handle("update_incident", { number: crowded.incident.number, expected_mod_count: "0",
+    values: { work_notes: "Do not infer absence from a bounded window" }, operation_id: randomUUID() }), error => {
+    assert.equal(error.outcome.status, "uncertain");
+    assert.equal(error.outcome.work_note.status, "unknown");
+    assert.equal(error.outcome.work_note.limit, 20);
+    assert.equal(error.outcome.work_note.limitReached, true);
+    assert.equal(error.outcome.work_note.entry, undefined);
+    return true;
+  });
+  assert.equal(crowded.writes().length, 1);
+});
 
 test("shared backend supports incident CRUD and exact assignment, reassignment and clearing", async t => {
   const f = fixture(t);
@@ -207,11 +345,21 @@ test("signed Cowork HTTP calls use the same guarded backend for recent reads and
   for (const assigned_to of [candidate.candidates[0].sys_id, f.users[1].sys_id, null]) {
     const operation_id = randomUUID();
     const ownerToken = assigned_to === f.users[1].sys_id ? secondToken : token;
+    const values = { assigned_to, ...(assigned_to === candidate.candidates[0].sys_id ?
+      { work_notes: "Cowork handoff findings; confirm this append independently." } : {}) };
     const result = await call("update_incident", { number: incident.number, expected_mod_count: f.incident.sys_mod_count,
-      values: { assigned_to }, operation_id }, ownerToken);
+      values, operation_id }, ownerToken);
     assert.equal(result.status, "confirmed");
     assert.equal(result.assignment_group_preserved, true);
-    assert.equal((await call("get_incident_operation", { operation_id }, ownerToken)).unresolved_hold, false);
+    const recovered = await call("get_incident_operation", { operation_id }, ownerToken);
+    assert.equal(recovered.unresolved_hold, false);
+    if (values.work_notes) {
+      assert.equal(result.work_note.entry.value, values.work_notes);
+      assert.deepEqual(recovered.work_note.entry, result.work_note.entry);
+      const count = f.requests.length;
+      await call("get_incident_operation", { operation_id }, secondToken, true);
+      assert.equal(f.requests.length, count, "Another caller cannot read this work note through operation recovery");
+    }
   }
   assert.equal((await call("delete_incident", { number: incident.number, expected_mod_count: f.incident.sys_mod_count,
     operation_id: randomUUID(), confirm: true })).deleted, true);

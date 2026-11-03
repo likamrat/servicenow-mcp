@@ -58,6 +58,16 @@ clear it. Preserve the current incident version and operation UUID. Inspect
 `get_incident_operation` after uncertainty; do not retry. These tools do not
 provision users, grant access or prove reference-list eligibility.
 
+For requested handoff findings, append the exact useful findings/checks with
+`update_incident.values.work_notes`, alongside `assigned_to` when both were
+authorized. First confirm `work_notes` is a writable `journal_input` in the
+source schema and respect its length limit. Never replace `description` or
+send accumulated journal history as a new note. Inspect both `record_fields`
+and `work_note`; assignment success alone does not establish note persistence.
+Use `get_incident_operation` with the original UUID for independent bounded
+readback. Unknown or not-observed notes remain uncertain, even if assignment
+is visible; do not retry an append, broaden journal reads or change source ACLs.
+
 For user CRUD, discover `get_user_schema`, `lookup_users`, `get_user`,
 `create_user`, `update_user`, `assess_user_delete`, `delete_user` and
 `get_user_operation` when the connected interface exposes them. Directory/Work IQ
