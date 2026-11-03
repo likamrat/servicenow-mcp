@@ -111,7 +111,12 @@ test("source denial retains uncertainty and blocks a different-UUID deletion rep
   f.deny();
   const args = { sys_id: f.id, expected_mod_count: "4", expected_impact_sha256: impact.impact_sha256,
     operation_id: randomUUID(), confirm: true, acknowledged_native_effects: impact.native_effects_declared };
-  await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", args), error => error.outcome.status === "uncertain");
+  await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", args), error => {
+    assert.equal(error.outcome.status, "uncertain");
+    assert.equal(error.outcome.diagnostic.status, 403);
+    assert.deepEqual(error.outcome.diagnostic.request, { method: "DELETE", table: "sys_user" });
+    return true;
+  });
   await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", { ...args, operation_id: randomUUID() }), /unresolved/);
   assert.equal(f.writes(), 1);
 });

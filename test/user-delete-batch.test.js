@@ -48,7 +48,10 @@ function fixture(t, count = 3) {
           return new Response(null, { status: 204 });
         } finally { inFlight--; }
       }
-      if (controls.beforeRead) await controls.beforeRead(table, query);
+      if (controls.beforeRead) {
+        const response = await controls.beforeRead(table, query);
+        if (response) return response;
+      }
       let rows = [];
       if (table === "sys_user" && query === "user_name=operator")
         rows = [{ sys_id: "f".repeat(32), user_name: "operator" }];
@@ -311,6 +314,49 @@ test("unreadable cascade metadata fails assessment and never permits a partial p
     ...executeArgs(plan), expected_plan_sha256: "0".repeat(64),
   }), /plan\/hash/);
   assert.equal(f.writes.length, 0);
+});
+
+test("native bulk assessment preserves the denied read provenance without retrying or disclosing request data", async t => {
+  for (const [table, stage, prefix] of [
+    ["sys_user", "operator_identity", "user_name="],
+    ["sys_user", "target_identity", "sys_id="],
+    ["sys_user_has_role", "role_grants", "user="],
+    ["task", "known_relationship", "assigned_to="],
+    ["sys_dictionary", "cascade_metadata", "reference="],
+    ["fm_expense_line", "cascade_relationship", "user="],
+  ]) await t.test(stage, async t => {
+    const f = fixture(t);
+    f.controls.dictionary = [{ sys_id: "1".repeat(32), sys_mod_count: "0",
+      name: "fm_expense_line", element: "user", reference: "sys_user",
+      reference_cascade_rule: "delete", internal_type: "reference" }];
+    let denied = false;
+    f.controls.beforeRead = async (requestedTable, query) => {
+      assert.equal(denied, false, "No request may follow an ACL denial.");
+      if (requestedTable !== table || !query.startsWith(prefix)) return;
+      denied = true;
+      return Response.json({ error: {
+        message: "User Not Authorized", detail: "Failed API level ACL Validation",
+        private_body: "PRIVATE_RESPONSE_BODY",
+      } }, { status: 403, headers: { "set-cookie": "PRIVATE_COOKIE", "x-debug": "PRIVATE_HEADER" } });
+    };
+    const plan = await assess(f);
+    assert.equal(denied, true);
+    assert.equal(plan.phase, "assessment_failed");
+    assert.deepEqual(plan.error, {
+      message: "ServiceNow API returned HTTP 403.",
+      diagnostic: { status: 403, message: "User Not Authorized", detail: "Failed API level ACL Validation",
+        request: { method: "GET", table }, assessment_stage: stage },
+    });
+    const saved = JSON.parse(fs.readFileSync(path.join(f.directory, "user-delete-batches", plan.batch_id + ".json"), "utf8"));
+    assert.deepEqual(saved.error, plan.error);
+    const { assessment_stage, ...sourceDiagnostic } = saved.error.diagnostic;
+    assert.doesNotMatch(JSON.stringify(sourceDiagnostic), /PRIVATE_|Authorization|sysparm_|user=|synthetic-only|cookie/i);
+    assert.equal(assessment_stage, stage);
+    assert.deepEqual(plan.counts, { unassessed: 3 });
+    assert.equal(plan.plan_sha256, undefined);
+    assert.equal(f.writes.length, 0);
+    assert.equal(fs.existsSync(path.join(f.directory, "operations.jsonl")), false);
+  });
 });
 
 test("cancelling a ready assessment reports a terminal stop without starting deletion", async t => {

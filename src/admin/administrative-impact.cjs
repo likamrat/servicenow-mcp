@@ -29,11 +29,18 @@ function canonical(value) {
 }
 function digest(value) { return crypto.createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex"); }
 function createAdministrativeImpact({ rows, principal, retainedIds, references, protectedIds = [], protectedNames = [] }) {
-  async function allRows(table, query, fields, { checkRecord, allowEmptyChildVersion = false } = {}) {
+  async function read(stage, ...args) {
+    try { return await rows(...args); }
+    catch (error) {
+      error.diagnostic = { ...error.diagnostic, assessment_stage: stage };
+      throw error;
+    }
+  }
+  async function allRows(table, query, fields, { checkRecord, allowEmptyChildVersion = false, stage = "known_relationship" } = {}) {
     const records = [];
     let cursor = "";
     for (;;) {
-      const page = await rows(table, `${query}${cursor ? "^sys_id>" + cursor : ""}^ORDERBYsys_id`, fields, 100,
+      const page = await read(stage, table, `${query}${cursor ? "^sys_id>" + cursor : ""}^ORDERBYsys_id`, fields, 100,
         { allowFullPage: true, allowEmptyChildVersion });
       if (!page.length) return records;
       for (const record of page) {
@@ -44,8 +51,8 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
       }
     }
   }
-  async function exactUser(query, fields) {
-    const found = await rows("sys_user", query, fields, 2);
+  async function exactUser(query, fields, stage = "target_identity") {
+    const found = await read(stage, "sys_user", query, fields, 2);
     if (found.length !== 1) throw new Error("Administrative identity absent, ambiguous or not readable.");
     return found[0];
   }
@@ -56,6 +63,7 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
   }
   async function administratorEvidence(userId) {
     const grants = await allRows("sys_user_has_role", `user=${userId}`, "sys_id,sys_mod_count,user,role", {
+      stage: "role_grants",
       allowEmptyChildVersion: true,
       checkRecord: row => {
         if (row.user !== userId || !ID.test(row.role)) throw new Error("Administrator-role evidence is incomplete.");
@@ -67,13 +75,14 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
       const roleId = pending.pop();
       if (definitions.has(roleId)) continue;
       if (definitions.size >= 500) throw new Error("Administrator-role closure exceeds bounded review.");
-      const found = await rows("sys_user_role", `sys_id=${roleId}`,
+      const found = await read("role_definition", "sys_user_role", `sys_id=${roleId}`,
         "sys_id,sys_mod_count,name,elevated_privilege,scoped_admin", 2);
       if (found.length !== 1 || found[0].sys_id !== roleId || !found[0].name ||
           !["true", "false"].includes(found[0].elevated_privilege) || !["true", "false"].includes(found[0].scoped_admin))
         throw new Error("Administrator-role definition is absent or unreadable.");
       definitions.set(roleId, found[0]);
       const edges = await allRows("sys_user_role_contains", `role=${roleId}`, "sys_id,sys_mod_count,role,contains", {
+        stage: "role_contains",
         checkRecord: row => {
           if (row.role !== roleId || !ID.test(row.contains)) throw new Error("Administrator-role closure is incomplete.");
         },
@@ -89,12 +98,13 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
   async function relation(table, field, target, operator = "=", declared) {
     const matches = value => typeof value === "string" && (operator === "LIKE" ? value.split(",").includes(target) : value === target);
     const records = await allRows(table, `${field}${operator}${target}`, `sys_id,sys_mod_count,${field}`, {
+      stage: declared ? "cascade_relationship" : "known_relationship",
       allowEmptyChildVersion: true,
       checkRecord: record => {
         if (!matches(record[field])) throw new Error("Administrative impact relationship identity/version mismatch:" + table + "." + field);
       },
     });
-    const metadata = declared ? [declared] : records.length ? await rows("sys_dictionary", `name=${table}^element=${field}`,
+    const metadata = declared ? [declared] : records.length ? await read("reference_metadata", "sys_dictionary", `name=${table}^element=${field}`,
       "sys_id,sys_mod_count,reference_cascade_rule", 2) : [];
     if (metadata.length > 1) throw new Error("Ambiguous native reference cascade metadata:" + table + "." + field);
     return { table, field, target, operator, records: records.sort((a, b) => a.sys_id.localeCompare(b.sys_id)),
@@ -115,6 +125,7 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
         const found = await allRows("sys_dictionary",
           `reference=${current.table}^reference_cascade_ruleINdelete,delete_no_workflow,cascade`,
           "sys_id,sys_mod_count,name,element,reference,reference_cascade_rule,internal_type", {
+            stage: "cascade_metadata",
             checkRecord: row => {
               if (!NAME.test(row.name) || !NAME.test(row.element) || row.reference !== current.table ||
                   !deletesReference(row.reference_cascade_rule) || !["reference", "glide_list"].includes(row.internal_type))
@@ -155,7 +166,7 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
         typeof args.sys_id !== "string" || !ID.test(args.sys_id)) throw new Error("Exact administrative assessment sys_id required.");
     if (typeof principal !== "string" || !principal || /[\u0000-\u001f^]/.test(principal))
       throw new Error("Saved operator cannot be safely resolved.");
-    const operator = await exactUser(`user_name=${principal}`, "sys_id,user_name");
+    const operator = await exactUser(`user_name=${principal}`, "sys_id,user_name", "operator_identity");
     if (operator.user_name.toLowerCase() !== principal.toLowerCase()) throw new Error("Saved operator identity mismatch.");
     const target = await exactUser(`sys_id=${args.sys_id}`,
       "sys_id,user_name,first_name,last_name,title,active,locked_out,notification,sys_class_name,identity_type,internal_integration_user,web_service_access_only,sys_mod_count");
@@ -175,12 +186,13 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
       if (impact.administrator_evidence.protected) blocked.push("protected_administrator_role");
     }
     if (!blocked.length) {
-      const contact = await rows("sys_user", `sys_id=${target.sys_id}^emailISEMPTY`, "sys_id", 2);
-      const local = await rows("sys_user", `sys_id=${target.sys_id}^sourceISEMPTY^ldap_serverISEMPTY`, "sys_id", 2);
+      const contact = await read("identity_markers", "sys_user", `sys_id=${target.sys_id}^emailISEMPTY`, "sys_id", 2);
+      const local = await read("identity_markers", "sys_user", `sys_id=${target.sys_id}^sourceISEMPTY^ldap_serverISEMPTY`, "sys_id", 2);
       if ([...contact, ...local].some(r => r.sys_id !== target.sys_id)) throw new Error("Administrative marker identity mismatch.");
       impact.email_present = contact.length === 0;
       impact.external_marker_present = local.length === 0;
-      impact.native_policy = (await allRows("sys_script", "collection=sys_user^active=true^action_delete=true", "sys_id,sys_mod_count,name,when"))
+      impact.native_policy = (await allRows("sys_script", "collection=sys_user^active=true^action_delete=true",
+        "sys_id,sys_mod_count,name,when", { stage: "delete_rules" }))
         .sort((a, b) => a.sys_id.localeCompare(b.sys_id));
       impact.relationships = [];
       for (const [table, field] of references) impact.relationships.push(await relation(table, field, target.sys_id));
@@ -200,7 +212,7 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
       if (impact.retained_related_ids.length) blocked.push("native_cascade_conflicts_with_user_retention_hold");
       impact.cascading_user_protection = [];
       for (const sysId of [...new Set(cascadingUsers)].sort()) {
-        const user = await exactUser(`sys_id=${sysId}`, "sys_id,sys_mod_count,user_name,first_name,last_name");
+        const user = await exactUser(`sys_id=${sysId}`, "sys_id,sys_mod_count,user_name,first_name,last_name", "cascade_user_identity");
         if (user.sys_id !== sysId || typeof user.user_name !== "string")
           throw new Error("Cascading user identity is unreadable.");
         const privileged = await administratorEvidence(sysId);
@@ -212,7 +224,7 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
   }
   async function verify(impact, observations) {
     for (const rel of impact.relationships) for (const before of rel.records) {
-      const after = await rows(rel.table, `sys_id=${before.sys_id}`, `sys_id,sys_mod_count,${rel.field}`, 2,
+      const after = await read("related_readback", rel.table, `sys_id=${before.sys_id}`, `sys_id,sys_mod_count,${rel.field}`, 2,
         { allowEmptyChildVersion: true });
       if (after[0] && after[0].sys_id !== before.sys_id) throw new Error("Administrative related readback identity mismatch.");
       const stillLinked = after.length && (rel.operator === "LIKE" ? after[0][rel.field].split(",").includes(rel.target) : after[0][rel.field] === rel.target);

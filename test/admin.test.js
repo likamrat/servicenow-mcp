@@ -5,6 +5,30 @@ const os = require("node:os");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { createAdmin } = require("../src/admin/index.cjs");
+const { createSource } = require("../src/admin/source.cjs");
+
+test("source failure provenance includes only validated method/table, not request payloads or transport exceptions", async () => {
+  let requests = 0;
+  const source = createSource({
+    instance: "https://service.example.invalid", username: "PRIVATE_PRINCIPAL", password: "PRIVATE_PASSWORD",
+    fetchImpl: async () => { requests++; throw new Error("PRIVATE_TRANSPORT_EXCEPTION"); },
+  });
+  await assert.rejects(source.request("GET", "sys_user", { sysparm_query: "user_name=PRIVATE_TARGET" }), error => {
+    assert.match(error.message, /Source transport failed/);
+    assert.deepEqual(error.diagnostic, { request: { method: "GET", table: "sys_user" } });
+    assert.doesNotMatch(JSON.stringify({ message: error.message, diagnostic: error.diagnostic }), /PRIVATE_|sysparm_|user_name=/);
+    return true;
+  });
+  for (const [method, table] of [
+    ["GET PRIVATE_METHOD", "sys_user"], ["GET", "sys_user?PRIVATE_QUERY"],
+    ["GET", { toString: () => "sys_user", secret: "PRIVATE_OBJECT" }],
+  ]) await assert.rejects(source.request(method, table), error => {
+    assert.equal(error.message, "Invalid source identity.");
+    assert.equal(error.diagnostic, undefined);
+    return true;
+  });
+  assert.equal(requests, 1);
+});
 
 test("business CRUD uses source schema, guards versions and retains consumed operations across restart", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "servicenow-admin-"));

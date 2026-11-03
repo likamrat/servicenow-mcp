@@ -1,6 +1,7 @@
 const { instanceOrigin } = require("../configuration.cjs");
 const ID = /^[a-f0-9]{32}$/;
 const NAME = /^[a-zA-Z][a-zA-Z0-9_]{0,127}$/;
+const METHODS = new Set(["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]);
 
 function createSource({ instance, username, password, fetchImpl = fetch }) {
   instance = instanceOrigin(instance);
@@ -56,14 +57,20 @@ function createSource({ instance, username, password, fetchImpl = fetch }) {
     return response;
   }
   async function request(method, table, params = {}, values, id) {
-    if (!NAME.test(table) || (id !== undefined && !ID.test(id))) throw new Error("Invalid source identity.");
-    const response = await send(`${instance}/api/now/table/${table}${id ? "/" + id : ""}?${new URLSearchParams(params)}`, {
-      method, headers: { "Content-Type": "application/json" },
-      ...(values === undefined ? {} : { body: JSON.stringify(values) }),
-    });
-    if (response.status === 204) return null;
-    try { return JSON.parse((await boundedBody(response, 8 * 1024 * 1024)).toString("utf8")); }
-    catch { throw new Error("Invalid or oversized source response; reconcile any sent write before further action."); }
+    if (!METHODS.has(method) || typeof table !== "string" || !NAME.test(table) ||
+        (id !== undefined && (typeof id !== "string" || !ID.test(id)))) throw new Error("Invalid source identity.");
+    try {
+      const response = await send(`${instance}/api/now/table/${table}${id ? "/" + id : ""}?${new URLSearchParams(params)}`, {
+        method, headers: { "Content-Type": "application/json" },
+        ...(values === undefined ? {} : { body: JSON.stringify(values) }),
+      });
+      if (response.status === 204) return null;
+      try { return JSON.parse((await boundedBody(response, 8 * 1024 * 1024)).toString("utf8")); }
+      catch { throw new Error("Invalid or oversized source response; reconcile any sent write before further action."); }
+    } catch (error) {
+      error.diagnostic = { ...error.diagnostic, request: { method, table } };
+      throw error;
+    }
   }
   async function list(table, query, fields, limit = 100) {
     const data = await request("GET", table, { sysparm_query: query, sysparm_fields: fields,

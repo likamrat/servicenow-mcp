@@ -25,7 +25,10 @@ function fixture(t) {
     const query = url.searchParams.get("sysparm_query") || "";
     const values = options.body ? JSON.parse(options.body) : undefined;
     requests.push({ table, recordId, query, method: options.method, values });
-    if (mode.beforeRequest) await mode.beforeRequest({ table, recordId, query, method: options.method, values });
+    if (mode.beforeRequest) {
+      const response = await mode.beforeRequest({ table, recordId, query, method: options.method, values });
+      if (response) return response;
+    }
     if (options.method !== "GET") {
       if (mode.deny) return Response.json({ error: { message: "Security constraints deny access" } }, { status: 403 });
       let changed;
@@ -108,6 +111,40 @@ async function waitBatch(admin, batch_id, caller = "caller-a") {
   }
   throw new Error("Synthetic creation batch did not settle.");
 }
+
+test("bulk creation keeps safe source rejection provenance in its existing durable target error", async t => {
+  const f = fixture(t);
+  let denied = false;
+  f.mode.beforeRequest = ({ table, method }) => {
+    assert.equal(denied, false, "No request may follow an ACL denial.");
+    assert.equal(method, "GET");
+    if (table !== "sys_user") return;
+    denied = true;
+    return Response.json({ error: {
+      message: "User Not Authorized", detail: "Failed API level ACL Validation",
+      private_body: "PRIVATE_BODY",
+    } }, { status: 403, headers: { "x-debug": "PRIVATE_HEADER" } });
+  };
+  const batch_id = randomUUID();
+  await f.admin.handle("assess_user_bulk_create", { batch_id,
+    targets: [{ user_name: "private-person@example.invalid", profile: { first_name: "PRIVATE_PROFILE" } }],
+  }, "caller-a");
+  const result = await waitBatch(f.admin, batch_id);
+  assert.equal(denied, true);
+  assert.equal(result.phase, "blocked");
+  assert.equal(result.targets[0].error, "ServiceNow API returned HTTP 403.");
+  assert.deepEqual(result.targets[0].diagnostic, {
+    status: 403, message: "User Not Authorized", detail: "Failed API level ACL Validation",
+    request: { method: "GET", table: "sys_user" },
+  });
+  const saved = JSON.parse(fs.readFileSync(path.join(f.directory, "user-create-batches", batch_id + ".json"), "utf8"));
+  assert.deepEqual(saved.items[0].diagnostic, result.targets[0].diagnostic);
+  assert.doesNotMatch(JSON.stringify(saved.items[0].diagnostic), /private|sysparm_|user_name=|Authorization|synthetic-only/i);
+  assert.equal(result.assessment_sha256, undefined);
+  assert.equal(result.eligible, false);
+  assert.equal(f.writes().length, 0);
+  assert.equal(fs.existsSync(path.join(f.directory, "operations.jsonl")), false);
+});
 
 test("generic user CRUD accepts internally discovered email as unverified request data and creates no-login user", async t => {
   const f = fixture(t);

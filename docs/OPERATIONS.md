@@ -263,6 +263,20 @@ distinguish completed work, cancellation, blocked users and unattempted targets.
 This confirms job settlement, not that every account changed. Failed or uncertain
 source operations retain their original holds and prevent a safe restart.
 
+Table API errors include `diagnostic.request.method` and `table`. Deletion
+impact errors also include an `assessment_stage`, such as `role_grants` or
+`cascade_relationship`. These fields identify the requested read without adding
+headers, query strings, record values or response bodies to the diagnostic.
+The existing sanitized source error remains intact. No source correlation ID
+is invented. Both bulk status paths retain this diagnostic in their existing
+job or target error; older receipts remain unchanged.
+
+This provenance does not resolve an ACL denial or authorize a retry. If an
+assessment fails before producing a plan, stop and retain the original batch.
+Any separately authorized diagnostic reproduction should assess only the
+original first target, read-only, and stop at the first failure. Do not restart
+the whole batch or bypass the unreadable dependency.
+
 Do not resend with the same or a new ID, switch callers to bypass a hold, or
 automatically roll back. Preserve the original error, returned identities and
 later observations. A matching record found after response loss is an observation,
