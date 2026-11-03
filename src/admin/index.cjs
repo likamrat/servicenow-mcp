@@ -8,6 +8,7 @@ const { createUserAccess } = require("./user-access.cjs");
 const { createReads } = require("../reads.cjs");
 const { createDeletion } = require("./deletion.cjs");
 const { createUserDeleteBatch } = require("./user-delete-batch.cjs");
+const { createUserBulkCreate } = require("./user-bulk-create.cjs");
 const { tools: styleTools, createThemeStyleOperations } = require("./theme-style.cjs");
 const { createLogoRestoreOperations } = require("./logo-restore.cjs");
 const { validate } = require("./validate.cjs");
@@ -53,6 +54,7 @@ function createAdmin(config) {
   const deletion = createDeletion({ source, state, principal: config.username });
   const userDeleteBatch = createUserDeleteBatch({ source, state, deletion, principal: config.username });
   const users = createUsers({ source, state, records, incidents, principal: config.username });
+  const userBulkCreate = createUserBulkCreate({ source, state, users, principal: config.username, runOperation });
   const userAccess = createUserAccess({ source, state, records, principal: config.username });
   const accountPolicy = createAccountPolicyInspection({ source, records, directory: state.directory });
   const dependencies = { ...source, ...state, principal: config.username, instance, directory: config.directory };
@@ -61,7 +63,8 @@ function createAdmin(config) {
   const conditional = [...accountTools.filter(tool => tool.name !== "local_admin_user_get"), ...importTools,
     ...accessTools.filter(tool => accessNames.has(tool.name)), ...definitionTools.filter(tool => definitionNames.has(tool.name))]
     .map(tool => ({ ...tool, description: "Requires an operator-reviewed source contract; unavailable until configured. Writes reject contract drift. " + tool.description }));
-  const tools = [...reads.tools, ...records.tools, ...incidents.tools, ...users.tools, ...userAccess.tools, ...accountPolicy.tools, ...deletion.tools, ...userDeleteBatch.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
+  const tools = [...reads.tools, ...records.tools, ...incidents.tools, ...users.tools, ...userAccess.tools, ...accountPolicy.tools, ...deletion.tools,
+    ...userDeleteBatch.tools, ...userBulkCreate.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
   const routes = new Map([
     ...records.tools.map(tool => [tool.name, records.handle]),
     ...deletion.tools.map(tool => [tool.name, deletion.handle]),
@@ -104,12 +107,13 @@ function createAdmin(config) {
     if (reads.tools.some(item => item.name === name)) return reads.handle(name, args);
     validate(tool.inputSchema, args);
     if (userDeleteBatch.tools.some(item => item.name === name)) return userDeleteBatch.handle(name, args, callerKey);
+    if (userBulkCreate.tools.some(item => item.name === name)) return userBulkCreate.handle(name, args, callerKey);
     return state.run(() => runOperation(name, args, callerKey));
   }
   // Batch actions already own state.run; dispatch without re-entering its queue.
   async function runOperation(name, args, callerKey) {
     const tool = tools.find(item => item.name === name);
-    if (!tool || userDeleteBatch.tools.some(item => item.name === name))
+    if (!tool || [...userDeleteBatch.tools, ...userBulkCreate.tools].some(item => item.name === name))
       throw new Error("A user batch cannot dispatch another bulk operation.");
     validate(tool.inputSchema, args);
     if (!tool.annotations.readOnlyHint && state.isAttempted(args.operation_id)) throw new Error("Operation UUID already attempted; no replay.");

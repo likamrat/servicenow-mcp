@@ -255,6 +255,50 @@ test("nonactivation access policies never qualify restoring login access", async
   assert.equal(f.writes().length, 0);
 });
 
+test("bulk reconciliation requires reviewed activation coverage and preserves all existing role origins", async t => {
+  for (const activate of [false, true]) {
+    const f = await lifecycleFixture(t, activate);
+    const schema = await f.admin.handle("get_user_schema", {});
+    fs.writeFileSync(path.join(f.directory, "user-profile-contract.json"), JSON.stringify({
+      format: 1, instance: "https://service.example.invalid", schema_sha256: schema.schema_sha256,
+      rules_sha256: schema.rules_sha256, sourceEvidenceSha256: "a".repeat(64),
+      protectedIds: [], protectedNames: [], absence_visibility_reviewed: true,
+    }));
+    const before = structuredClone({ roles: f.tables.sys_user_has_role, groups: f.tables.sys_user_grmember });
+    const batch_id = randomUUID();
+    const settle = async () => {
+      for (let index = 0; index < 1000; index++) {
+        const status = await f.admin.handle("get_user_bulk_create", { batch_id }, "caller-a");
+        if (!["accepted", "queued", "assessing", "running"].includes(status.phase)) return status;
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      throw new Error("Synthetic lifecycle batch did not settle.");
+    };
+    await f.admin.handle("assess_user_bulk_create", { batch_id, final_state: { active: true, locked_out: false },
+      targets: [{ user_name: "existing-support-user", existing: { sys_id: id(2), expected_mod_count: "0" },
+        profile: { email: "support@example.invalid" } }] }, "caller-a");
+    const plan = await settle();
+    assert.equal(f.writes().length, 0);
+    if (!activate) {
+      assert.equal(plan.phase, "blocked");
+      assert.match(plan.targets[0].error, /reviewed activation/);
+      continue;
+    }
+    assert.equal(plan.phase, "assessed", JSON.stringify(plan));
+    await f.admin.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: plan.assessment_sha256,
+      confirm: true, acknowledged_native_effects: plan.native_effects }, "caller-a");
+    const result = await settle();
+    assert.equal(result.phase, "completed", JSON.stringify(result));
+    assert.equal(result.counts.corrected, 1);
+    assert.equal(f.tables.sys_user[1].active, "true");
+    assert.equal(f.tables.sys_user[1].locked_out, "false");
+    assert.deepEqual({ roles: f.tables.sys_user_has_role, groups: f.tables.sys_user_grmember }, before);
+    assert.deepEqual(f.writes().map(row => row.values), [
+      { email: "support@example.invalid" }, { active: true }, { locked_out: false },
+    ]);
+  }
+});
+
 test("native lifecycle response loss remains uncertain even when the requested state is visible", async t => {
   const f = await lifecycleFixture(t);
   const assessment = await f.admin.handle("local_admin_user_assess", { sys_id: id(2) });

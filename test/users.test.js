@@ -12,11 +12,12 @@ function fixture(t) {
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const rows = [];
   const requests = [];
-  const mode = { lostResponse: false, missingResponseIdentity: false, deny: false, unexpectedActive: false, ruleVersion: "0" };
+  const mode = { lostResponse: false, missingResponseIdentity: false, deny: false, unexpectedActive: false, ruleVersion: "0",
+    beforeRequest: null };
   const user = values => ({ sys_id: id("a"), sys_mod_count: "0", sys_class_name: "sys_user",
     user_name: "", first_name: "", last_name: "", name: "", title: "", email: "",
     active: "false", locked_out: "true", notification: "1", identity_type: "human",
-    internal_integration_user: "false", web_service_access_only: "false", source: "", ldap_server: "",
+    internal_integration_user: "false", web_service_access_only: "false", source: "", ldap_server: "", failed_attempts: "0",
     ...values });
   const operator = user({ sys_id: id("b"), user_name: "operator" });
   const fetchImpl = async (raw, options) => {
@@ -24,16 +25,26 @@ function fixture(t) {
     const query = url.searchParams.get("sysparm_query") || "";
     const values = options.body ? JSON.parse(options.body) : undefined;
     requests.push({ table, recordId, query, method: options.method, values });
+    if (mode.beforeRequest) await mode.beforeRequest({ table, recordId, query, method: options.method, values });
     if (options.method !== "GET") {
       if (mode.deny) return Response.json({ error: { message: "Security constraints deny access" } }, { status: 403 });
-      if (options.method === "POST") rows.push(user(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)]))));
-      if (options.method === "PATCH") Object.assign(rows.find(row => row.sys_id === recordId),
-        Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)])),
-        { sys_mod_count: "1" });
+      let changed;
+      if (options.method === "POST") {
+        changed = user({ sys_id: rows.length ? (rows.length + 10).toString(16).padStart(32, "0") : id("a"),
+          ...Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)])) });
+        rows.push(changed);
+      }
+      if (options.method === "PATCH") {
+        changed = rows.find(row => row.sys_id === recordId);
+        Object.assign(changed, Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)])),
+          { sys_mod_count: String(Number(changed.sys_mod_count) + 1) });
+        if (values.locked_out === false) changed.failed_attempts = "0";
+      }
+      changed.name = [changed.first_name, changed.last_name].filter(Boolean).join(" ");
       if (mode.unexpectedActive) rows[0].active = "true";
       if (mode.lostResponse) throw new Error("Synthetic lost response");
       if (mode.missingResponseIdentity) return Response.json({ result: {} });
-      return Response.json({ result: rows[0] });
+      return Response.json({ result: changed });
     }
     let result = [];
     if (table === "sys_db_object") result = [{ name: "sys_user", "super_class.name": "" }];
@@ -50,9 +61,14 @@ function fixture(t) {
     }
     if (table === "sys_choice") result = [{ sys_id: id("2"), name: "sys_user", element: "title",
       value: "Suggested title", label: "Suggested title", dependent_value: "" }];
-    if (table === "sys_script") result = [{ sys_id: id("c"), sys_mod_count: mode.ruleVersion }];
+    if (table === "sys_script") result = [{ sys_id: id("c"), sys_mod_count: mode.ruleVersion,
+      collection: "sys_user", active: "true", name: "Synthetic account rule", when: "before", order: "100",
+      action_insert: "true", action_update: "true", action_delete: "false", action_query: "false",
+      filter_condition: "", condition: "", script: "Synthetic lifecycle fixture", template: "", sys_overrides: "",
+      role_conditions: "", abort_action: "false", sys_scope: "global", sys_domain: "global" }];
     if (table === "sys_user") result = [...rows, operator].filter(row => query.split("^").every(part => {
       if (part.startsWith("ORDERBY")) return true;
+      if (part.endsWith("ISEMPTY")) return row[part.slice(0, -"ISEMPTY".length)] === "";
       const split = part.indexOf("=");
       return split > 0 && String(row[part.slice(0, split)]).toLowerCase() === part.slice(split + 1).toLowerCase();
     }));
@@ -72,6 +88,25 @@ async function approve(f) {
     rules_sha256: schema.rules_sha256, sourceEvidenceSha256: "d".repeat(64),
     protectedIds: [], protectedNames: ["admin", "guest", "system"], absence_visibility_reviewed: true,
   }));
+}
+
+async function approveAccount(f) {
+  const evidence = await f.admin.handle("inspect_user_account_policy", {});
+  fs.writeFileSync(path.join(f.directory, "account-contract.json"), JSON.stringify({
+    format: 2, instance: "https://service.example.invalid", sourceEvidenceSha256: "d".repeat(64),
+    protectedIds: [], protectedNames: ["admin", "guest", "system"],
+    businessRuleVersions: evidence.businessRuleVersions, schema_sha256: evidence.schema_sha256,
+    rules_sha256: evidence.rules_sha256, reviewedAccessPolicies: [],
+  }));
+}
+
+async function waitBatch(admin, batch_id, caller = "caller-a") {
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const result = await admin.handle("get_user_bulk_create", { batch_id }, caller);
+    if (!["accepted", "assessing", "queued", "running"].includes(result.phase)) return result;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  throw new Error("Synthetic creation batch did not settle.");
 }
 
 test("generic user CRUD accepts internally discovered email as unverified request data and creates no-login user", async t => {
@@ -137,6 +172,176 @@ test("profile CRUD preserves policy, current-operator, retention, collisions and
   f.mode.ruleVersion = "1";
   await assert.rejects(f.admin.handle("update_user", update), /differ from reviewed policy/);
   assert.equal(f.writes().length, 0);
+});
+
+test("bulk creation assesses the whole supplied roster without writes and preserves exact existing identities", async t => {
+  const f = fixture(t);
+  await approve(f);
+  await approveAccount(f);
+  f.rows.push(f.user({ user_name: "legacy.avery", first_name: "Avery", last_name: "Example", name: "Avery Example",
+    active: "true", locked_out: "false" }));
+  const targets = [
+    { user_name: "legacy.avery", existing: { sys_id: id("a"), expected_mod_count: "0" },
+      profile: { first_name: "Avery", last_name: "Example", email: "avery@example.invalid" } },
+    { user_name: "jordan@example.invalid", profile: { first_name: "Jordan", last_name: "Sample", email: "jordan@example.invalid" } },
+  ];
+  const batch_id = randomUUID();
+  await f.admin.handle("assess_user_bulk_create", { batch_id, targets }, "caller-a");
+  const result = await waitBatch(f.admin, batch_id);
+  assert.equal(result.eligible, true);
+  assert.deepEqual(result.targets.map(target => target.disposition), ["correct", "create"]);
+  assert.equal(result.targets[0].before.sys_id, id("a"));
+  assert.equal(result.targets[0].before.user_name, "legacy.avery");
+  assert.equal(result.final_state, null);
+  assert.deepEqual(result.creation_defaults, { active: false, locked_out: true });
+  assert.equal(result.directory_verified, false);
+  assert.equal(f.writes().length, 0);
+  await f.admin.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: result.assessment_sha256,
+    confirm: true, acknowledged_native_effects: result.native_effects }, "caller-a");
+  const completed = await waitBatch(f.admin, batch_id);
+  assert.equal(completed.phase, "completed", JSON.stringify(completed));
+  assert.equal(completed.roster_readback_complete, true);
+  assert.equal(f.rows[0].active, "true");
+  assert.equal(f.rows[0].locked_out, "false");
+  assert.equal(f.rows[1].active, "false");
+  assert.equal(f.rows[1].locked_out, "true");
+  assert.deepEqual(f.writes().map(row => row.method), ["PATCH", "POST"]);
+});
+
+test("native bulk creation preserves five existing IDs and reaches explicit active/unlocked state for thirty supplied profiles", async t => {
+  const f = fixture(t);
+  await approve(f);
+  await approveAccount(f);
+  const targets = Array.from({ length: 30 }, (_, index) => {
+    const user_name = index < 5 ? `legacy.staff.${index}` : `staff.${index}@example.invalid`;
+    const input = { user_name, profile: { first_name: "Synthetic", last_name: `Staff${index}`, email: `staff.${index}@example.invalid` } };
+    if (index < 5) {
+      const sys_id = (index + 200).toString(16).padStart(32, "0");
+      f.rows.push(f.user({ sys_id, user_name, name: `Synthetic Staff${index}`, first_name: "Synthetic",
+        last_name: `Staff${index}`, email: index === 0 ? input.profile.email : "",
+        active: index === 0 ? "true" : "false", locked_out: index === 0 ? "false" : "true", notification: "2" }));
+      input.existing = { sys_id, expected_mod_count: "0" };
+    }
+    return input;
+  });
+  const batch_id = randomUUID();
+  await f.admin.handle("assess_user_bulk_create", { batch_id, targets, final_state: { active: true, locked_out: false } }, "caller-a");
+  const assessment = await waitBatch(f.admin, batch_id);
+  assert.equal(assessment.phase, "assessed", JSON.stringify(assessment));
+  assert.equal(f.writes().length, 0);
+  await assert.rejects(f.admin.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: assessment.assessment_sha256,
+    confirm: true, acknowledged_native_effects: [] }, "caller-a"), /exact creation assessment/);
+  await f.admin.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: assessment.assessment_sha256,
+    confirm: true, acknowledged_native_effects: assessment.native_effects }, "caller-a");
+  const result = await waitBatch(f.admin, batch_id);
+  assert.equal(result.phase, "completed", JSON.stringify(result));
+  assert.equal(result.counts.created, 25);
+  assert.equal(result.counts.corrected, 4);
+  assert.equal(result.counts.already_matching, 1);
+  assert.equal(f.rows.length, 30);
+  assert.equal(f.writes().filter(row => row.method === "POST").length, 25);
+  assert.ok(f.rows.every(row => row.active === "true" && row.locked_out === "false"));
+  for (const input of targets.slice(0, 5))
+    assert.equal(f.rows.find(row => row.sys_id === input.existing.sys_id).user_name, input.user_name);
+  assert.ok(f.writes().every(row => row.table === "sys_user" && !Object.hasOwn(row.values, "user_password")));
+  const restarted = f.restart();
+  assert.equal((await restarted.handle("get_user_bulk_create", { batch_id }, "caller-a")).phase, "completed");
+  await assert.rejects(restarted.handle("get_user_bulk_create", { batch_id }, "caller-b"));
+  await assert.rejects(restarted.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: assessment.assessment_sha256,
+    confirm: true, acknowledged_native_effects: assessment.native_effects }, "caller-a"), /unstarted/);
+});
+
+test("bulk creation blocks case collisions, ambiguous name-only identities and source drift without writes", async t => {
+  const f = fixture(t);
+  await approve(f);
+  await approveAccount(f);
+  const input = { user_name: "avery@example.invalid", profile: { first_name: "Avery", last_name: "Example", email: "avery@example.invalid" } };
+  await assert.rejects(f.admin.handle("assess_user_bulk_create", { batch_id: randomUUID(),
+    targets: [input, { ...input, user_name: "AVERY@example.invalid" }] }), /case-colliding/);
+  f.rows.push(f.user({ user_name: "legacy.avery", first_name: "Avery", last_name: "Example", name: "Avery Example" }));
+  const collisionId = randomUUID();
+  await f.admin.handle("assess_user_bulk_create", { batch_id: collisionId, targets: [input] }, "caller-a");
+  const collision = await waitBatch(f.admin, collisionId);
+  assert.equal(collision.phase, "blocked");
+  assert.equal(collision.targets[0].candidates[0].sys_id, id("a"));
+  const batch_id = randomUUID();
+  await f.admin.handle("assess_user_bulk_create", { batch_id, targets: [{
+    ...input, user_name: "legacy.avery", existing: { sys_id: id("a"), expected_mod_count: "0" },
+  }] }, "caller-a");
+  const plan = await waitBatch(f.admin, batch_id);
+  assert.equal(plan.phase, "assessed");
+  f.rows[0].sys_mod_count = "1";
+  await f.admin.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: plan.assessment_sha256,
+    confirm: true, acknowledged_native_effects: plan.native_effects }, "caller-a");
+  const result = await waitBatch(f.admin, batch_id);
+  assert.equal(result.phase, "blocked");
+  assert.match(result.targets[0].error, /version changed/);
+  assert.equal(f.writes().length, 0);
+});
+
+test("a lost bulk create response stops remaining targets and survives restart without attribution upgrade or new-job replay", async t => {
+  const f = fixture(t);
+  await approve(f);
+  const targets = ["avery", "jordan"].map(user_name => ({ user_name, profile: { email: `${user_name}@example.invalid` } }));
+  const batch_id = randomUUID();
+  await f.admin.handle("assess_user_bulk_create", { batch_id, targets }, "caller-a");
+  const plan = await waitBatch(f.admin, batch_id);
+  const operationIds = plan.targets.map(target => target.operation_ids);
+  f.mode.lostResponse = true;
+  await f.admin.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: plan.assessment_sha256,
+    confirm: true, acknowledged_native_effects: plan.native_effects }, "caller-a");
+  const result = await waitBatch(f.admin, batch_id);
+  assert.equal(result.phase, "uncertain");
+  assert.equal(result.counts.uncertain, 1);
+  assert.equal(result.counts.assessed, 1);
+  assert.equal(result.targets[0].evidence.failure.outcome.retained_created_identity, null);
+  assert.equal(result.targets[0].evidence.failure.outcome.observed_user_identity, id("a"));
+  assert.equal(f.writes().length, 1);
+  f.mode.lostResponse = false;
+  const restarted = f.restart();
+  const recovered = await restarted.handle("get_user_bulk_create", { batch_id }, "caller-a");
+  assert.equal(recovered.phase, "uncertain");
+  assert.deepEqual(recovered.targets.map(target => target.operation_ids), operationIds);
+  await assert.rejects(restarted.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: plan.assessment_sha256,
+    confirm: true, acknowledged_native_effects: plan.native_effects }, "caller-a"), /unstarted/);
+  const replacementId = randomUUID();
+  await restarted.handle("assess_user_bulk_create", { batch_id: replacementId, targets: [targets[1]] }, "caller-a");
+  const replacement = await waitBatch(restarted, replacementId);
+  assert.equal(replacement.phase, "blocked");
+  assert.match(replacement.targets[0].error, /unresolved/);
+  assert.equal(f.writes().length, 1);
+});
+
+test("bulk status and cancellation remain responsive while a semantic create owns the shared source lock", async t => {
+  const f = fixture(t);
+  await approve(f);
+  await approveAccount(f);
+  const batch_id = randomUUID();
+  await f.admin.handle("assess_user_bulk_create", { batch_id, final_state: { active: true, locked_out: false },
+    targets: [{ user_name: "avery", profile: { email: "avery@example.invalid" } }] }, "caller-a");
+  const plan = await waitBatch(f.admin, batch_id);
+  let release, reached;
+  const entered = new Promise(resolve => { reached = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  f.mode.beforeRequest = async request => { if (request.method === "POST") { reached(); await gate; } };
+  await f.admin.handle("start_user_bulk_create", { batch_id, expected_assessment_sha256: plan.assessment_sha256,
+    confirm: true, acknowledged_native_effects: plan.native_effects }, "caller-a");
+  await entered;
+  try {
+    const running = await f.admin.handle("get_user_bulk_create", { batch_id }, "caller-a");
+    assert.equal(running.phase, "running");
+    const otherProcess = f.restart();
+    await assert.rejects(otherProcess.handle("create_user", { user_name: "unrelated",
+      profile: { email: "unrelated@example.invalid" }, operation_id: randomUUID() }), /owned by another operation/);
+    const cancelled = await f.admin.handle("cancel_user_bulk_create", { batch_id }, "caller-a");
+    assert.equal(cancelled.stop_requested, true);
+  } finally { release(); }
+  const stopped = await waitBatch(f.admin, batch_id);
+  assert.equal(stopped.phase, "stopped");
+  assert.equal(stopped.targets[0].evidence.stages[0].status, "confirmed");
+  assert.equal(f.rows[0].active, "false");
+  assert.equal(f.rows[0].locked_out, "true");
+  assert.equal(f.writes().length, 1);
 });
 
 test("lost or rejected user creation and unexpected lifecycle effects remain durable without replay or adoption", async t => {

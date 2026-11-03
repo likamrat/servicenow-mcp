@@ -120,8 +120,7 @@ function createUsers({ source, state, records, incidents, principal }) {
       throw new Error("Exact user collision query returned inconsistent identity.");
     if (rows.some(row => row.sys_id !== exceptId)) throw new Error(`Existing ${field} collision; no account created, adopted or changed.`);
   }
-  async function mutate(name, args, callerKey) {
-    if (state.events(args.operation_id).length) throw new Error("Operation UUID already used; no replay.");
+  async function prepare(name, args) {
     const creating = name === "create_user";
     if (state.unresolved("sys_user") || args.sys_id && state.unresolved("sys_user", args.sys_id))
       throw new Error("Earlier user outcome unresolved; a new UUID cannot replay it.");
@@ -155,6 +154,12 @@ function createUsers({ source, state, records, incidents, principal }) {
     }
     await collision("user_name", creating ? args.user_name : before.user_name, before?.sys_id);
     if (Object.hasOwn(values, "email")) await collision("email", values.email, before?.sys_id);
+    return { before, values, evidence };
+  }
+  async function mutate(name, args, callerKey) {
+    if (state.events(args.operation_id).length) throw new Error("Operation UUID already used; no replay.");
+    const creating = name === "create_user";
+    const { before, values, evidence } = await prepare(name, args);
     const intent = { action: "user_crud", caller_key: callerKey, operation_id: args.operation_id, table: "sys_user",
       sys_id: before?.sys_id, user_name: creating ? args.user_name : before.user_name, values, before: project(before),
       directory_verified: false, native_effects: creating ? creationEffects : updateEffects, status: "prepared" };
@@ -280,6 +285,6 @@ function createUsers({ source, state, records, incidents, principal }) {
       unresolved_hold: state.unresolved("sys_user") || Boolean(sysId && state.unresolved("sys_user", sysId)),
       meaning: "Read-only observation; no replay, attribution upgrade, adoption or hold removal." };
   }
-  return { tools, handle };
+  return { tools, handle, prepare };
 }
-module.exports = { tools, createUsers, fingerprint };
+module.exports = { tools, createUsers, fingerprint, creationEffects, updateEffects };
