@@ -103,6 +103,28 @@ function createUserAccess({ source, state, records, principal, now = Date.now })
     if (expected.some(role => !before.roles.some(row => row.role === role)))
       throw new Error("Existing access lacks the reviewed native role expansion; do not replay grants to repair it.");
   }
+  async function reviewExisting(userId, policyKeys) {
+    const policies = [];
+    let before;
+    for (const key of policyKeys) {
+      const policy = await ready(key);
+      const current = await observe(userId, policy.approved);
+      if (before && !isDeepStrictEqual(before, current))
+        throw new Error("Existing user/access changed during lifecycle qualification.");
+      before = current;
+      existingExpansion(policy.evidence, before);
+      policies.push(policy);
+    }
+    if (!before) throw new Error("Existing access requires explicit reviewed lifecycle policies.");
+    const groups = new Set(policies.map(policy => policy.selected.group_id).filter(Boolean));
+    const roles = new Set(policies.flatMap(policy => [...policy.evidence.direct_roles, ...policy.evidence.inherited_roles]));
+    if (before.memberships.some(row => !groups.has(row.group)) || before.roles.some(row => !roles.has(row.role)))
+      throw new Error("Existing role/group is outside the reviewed lifecycle policies; no account change permitted.");
+    return { policies: [...policyKeys], activation_reviewed: policies.every(policy => policy.selected.activate),
+      fingerprint: fingerprint({ memberships: before.memberships, roles: before.roles,
+        policies: policies.map(policy => ({ key: policy.selected.key, policy: policy.policy_sha256, evidence: policy.evidence.evidence_sha256 })) }),
+      meaning: "Existing access is covered by current enabled policies; no membership or role is added, removed or repaired by this assessment." };
+  }
   function verify(before, after, evidence, completedStages, stage, responseId) {
     const allowedRoles = new Set([
       ...before.roles.map(row => row.role),
@@ -269,6 +291,6 @@ function createUserAccess({ source, state, records, principal, now = Date.now })
     if (name === "apply_user_access") return apply(args, callerKey);
     return status(args, callerKey);
   }
-  return { tools, handle };
+  return { tools, handle, reviewExisting };
 }
 module.exports = { tools, createUserAccess };

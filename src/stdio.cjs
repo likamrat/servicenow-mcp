@@ -17,7 +17,7 @@ async function main() {
     let result;
     if (method === "initialize") result = {
       protocolVersion: "2025-03-26", capabilities: { tools: {} },
-      serverInfo: { name: "servicenow-mcp", version: "1.0.0" },
+      serverInfo: { name: "servicenow-mcp", title: "ServiceNow", version: "1.0.0" },
     };
     else if (method === "ping") result = {};
     else if (method === "tools/list") result = { tools };

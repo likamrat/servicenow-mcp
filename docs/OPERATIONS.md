@@ -142,6 +142,63 @@ semantic user policies above.
 account effects and complete active-user-rule coverage. Each assessment/write
 compares the current complete rule/version set.
 
+Start with `inspect_user_account_policy`. It is available without a contract and
+returns the inherited user schema, native username uniqueness, active-rule
+versions and content fingerprints, including declarative rule templates.
+`policy_status` distinguishes `missing`, `matching` and `drifted`; none means
+effective source write permission. Rule links identify the source definitions
+whose scripts, conditions and templates must actually be reviewed.
+
+For a new qualification, retain the review evidence privately and install:
+
+```json
+{
+  "format": 2,
+  "instance": "https://your-instance.service-now.com",
+  "sourceEvidenceSha256": "<SHA256 of the completed private source review>",
+  "protectedIds": ["<source-protected user sys_id>"],
+  "protectedNames": ["admin", "guest", "system", "mms-service-account", "sharedservice.worker"],
+  "businessRuleVersions": [{"sys_id": "<reviewed rule sys_id>", "sys_mod_count": "<current version>"}],
+  "schema_sha256": "<reviewed schema SHA256>",
+  "rules_sha256": "<reviewed complete rule-content SHA256>",
+  "reviewedAccessPolicies": []
+}
+```
+
+Replace the example rule with the **entire** inspected version set, and use only
+real protected IDs (an empty array is valid when no additional IDs apply).
+The schema and rule-content hashes must be supplied together. Older version-only
+contracts remain compatible and are reported as `legacy_rule_versions_only`;
+they are not silently upgraded. Inspection never writes or approves a contract.
+Do not copy a fixture contract, approve an unread rule, substitute a discovery
+hash for review evidence, or automatically refresh after drift.
+
+Review create-time notification-device/identity-hash effects; profile/device
+synchronization; locked-account session/OAuth revocation; provider unlinking;
+contextual group changes on activation/deactivation; unlock's failed-attempt
+reset; source query visibility and username uniqueness. Passwords, MFA, identity
+conversion and role grants remain outside these lifecycle actions.
+
+For an existing account with roles/groups, `reviewedAccessPolicies` may name
+enabled policies from the existing `user-access-contract.json`. Each policy's
+complete role closure, ACLs and source evidence is rechecked through the same
+governed access implementation. Every current role and membership must be covered;
+activation/unlock additionally require activation enabled in **every** selected
+policy. This is an explicit lifecycle qualification, not an arbitrary-role
+allowlist or permission to add missing access. Empty/omitted keys retain the
+role/group block. Unknown or privileged access is not approved by ordinary
+account CRUD. Unexpected native access changes remain uncertain, even when the
+requested status was observed.
+
+After installation in the existing state directory, run the inspection again,
+then `local_admin_user_assess` for the intended exact ID. Use its per-action
+`eligibility`, current version and `required_native_effects` for the separately
+authorized status change. Do not retry a write just to learn its acknowledgments.
+Profile acknowledgments depend on the supplied fields; names synchronize
+`live_profile`, and any update while locked may revoke sessions/OAuth.
+Active business responsibilities still prevent lock/deactivation; merely having
+an assignment does not prohibit activation/unlock or authorize reassignment.
+
 `access-contract.json` requires `format: 1`, the exact `instance`,
 `sourceEvidenceSha256`, `directOriginDefaults`, and `tables`. Each table entry
 contains reviewed `rules` and `dictionary` ID/version arrays for:

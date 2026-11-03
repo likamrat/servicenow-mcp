@@ -19,6 +19,10 @@ For Cowork, an administrator must supply a matching OAuth connector and
 [host the authenticated backend](docs/COWORK.md).
 
 To update an installed Copilot plugin, select **Update plugin** and start a new chat.
+The MCP display title is **ServiceNow**; the legacy registration identifier is
+preserved so updates do not replace bindings or approvals. See
+[client naming compatibility](docs/SETUP.md#update-an-installed-plugin) if your
+host still displays the old identifier.
 
 ## Try it
 

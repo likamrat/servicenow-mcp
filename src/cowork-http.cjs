@@ -97,7 +97,7 @@ function createCoworkApp({ profile, backend, verifyAccessToken,
     const { method, params, id } = body;
     if (id === undefined) return res.sendStatus(202);
     if (method === "initialize") return res.json({ jsonrpc: "2.0", id, result: {
-      protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "servicenow-mcp", version: "1.0.0" },
+      protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "servicenow-mcp", title: "ServiceNow", version: "1.0.0" },
     } });
     if (method === "ping") return res.json({ jsonrpc: "2.0", id, result: {} });
     if (method === "tools/list") return res.json({ jsonrpc: "2.0", id, result: { tools: admittedTools(res.locals.requester) } });

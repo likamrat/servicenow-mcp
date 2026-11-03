@@ -75,12 +75,27 @@ rename or adopt an account to manufacture identity or eligibility.
 
 ## User lifecycle and deletion
 
+If a native lifecycle tool reports a missing reviewed account contract, use
+`inspect_user_account_policy` when available. It gathers actual source schema,
+rule/template fingerprints and readiness without installing or approving a
+policy. Missing qualification is not an ACL denial. Keep source review and
+contracts private, under the runtime owner's control; do not copy fixture
+policies, switch to direct API writes or mark discovery as reviewed.
+
 Use the available user semantic tools for creation, profile updates,
 activation, deactivation/locking, unlocking and deletion. Read their distinct
 preconditions and effects. A disabled-user creation path may exclude credentials
 and access fields; status transitions do not implicitly set a password, change
 notification preferences or restore sessions. Account for native primary-device
 creation and synchronization without assuming child cleanup.
+
+Use a fresh assessment's per-action eligibility and exact native-effect
+acknowledgments. Activation preserves lock; unlocking requires an active user
+and preserves notification/password/access state. Existing roles and groups
+need explicit coverage by current reviewed access policies, not removal to
+evade guards. Business responsibilities can block lock/deactivation without
+being a universal activation/unlock prohibition. Unexpected access changes
+or a lost write response remain uncertain, even with matching source readback.
 
 Choose the supported deletion path for the requested account. A disposable
 cohort restriction belongs to that tool, not to all ServiceNow users. An

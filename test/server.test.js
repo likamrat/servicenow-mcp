@@ -308,6 +308,7 @@ test("supports MCP initialization without resources and reports upstream failure
   const initialized = await rpc("initialize", { protocolVersion: "2025-03-26" });
   assert.ok(initialized.result.capabilities.tools);
   assert.equal(initialized.result.serverInfo.version, "1.0.0");
+  assert.equal(initialized.result.serverInfo.title, "ServiceNow");
   const notification = await fetch(`${endpoint}/mcp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

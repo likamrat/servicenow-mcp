@@ -48,6 +48,8 @@ test("account lifecycle requires reviewed metadata and rejects live rule drift b
   assert.equal(result.record.notification, "2");
   assert.equal(writes, 1);
   const fresh = await admin.handle("local_admin_user_assess", { sys_id: id });
+  assert.deepEqual(fresh.required_native_effects.deactivate, ["conditional_native_lockout_event",
+    "contextual_writer_membership_recompute", "provider_mapping_deactivation", "session_lockout_and_oauth_revocation"]);
   const deactivate = { sys_id: id, expected_mod_count: "1", assessment_id: fresh.assessment_id,
     operation_id: randomUUID(), acknowledged_native_effects: [] };
   await assert.rejects(admin.handle("local_admin_user_deactivate_and_lock", deactivate), /native-effect acknowledgment/);
@@ -60,13 +62,14 @@ test("account lifecycle requires reviewed metadata and rejects live rule drift b
   assert.equal(locked.record.notification, "2");
 });
 
-test("disabled creation, activation and unlock preserve separate effects and native child observations", async (t) => {
+test("native account CRUD and separate status transitions preserve unrelated fields and native child observations", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "servicenow-user-lifecycle-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const instance = "https://service.example.invalid", id = "a".repeat(32);
-  const rule = { sys_id: "b".repeat(32), sys_mod_count: "0" };
+  const rule = { sys_id: "b".repeat(32), sys_mod_count: "0", name: "Synthetic account policy", when: "before" };
   fs.writeFileSync(path.join(directory, "account-contract.json"), JSON.stringify({
-    format: 2, instance, sourceEvidenceSha256: "c".repeat(64), protectedIds: [], protectedNames: [], businessRuleVersions: [rule],
+    format: 2, instance, sourceEvidenceSha256: "c".repeat(64), protectedIds: [], protectedNames: [],
+    businessRuleVersions: [{ sys_id: rule.sys_id, sys_mod_count: rule.sys_mod_count }],
   }));
   let user;
   const methods = [];
@@ -84,12 +87,23 @@ test("disabled creation, activation and unlock preserve separate effects and nat
       Object.assign(user, JSON.parse(options.body), { sys_mod_count: String(Number(user.sys_mod_count) + 1), failed_attempts: "0" });
       return Response.json({ result: { sys_id: id } });
     }
+    if (options.method === "DELETE") {
+      methods.push(options.method);
+      user = null;
+      return new Response(null, { status: 204 });
+    }
     let rows = [];
     if (table === "sys_script") rows = [rule];
     if (table === "sys_user" && user && (query.startsWith(`sys_id=${id}`) || query === "user_name=sample")) rows = [user];
+    if (table === "sys_user" && query === "user_name=operator")
+      rows = [{ sys_id: "e".repeat(32), user_name: "operator" }];
     if (table === "cmn_notif_device" && user) rows = [{
-      sys_id: "d".repeat(32), user: id, active: "true", primary_email: "true", type: "Email",
+      sys_id: "d".repeat(32), sys_mod_count: "0", user: id, active: "true", primary_email: "true", type: "Email",
     }];
+    if (table === "cmn_notif_device" && query.includes("^sys_id>")) rows = [];
+    if (table === "sys_script" && query.includes("^sys_id>")) rows = [];
+    if (table === "sys_dictionary" && query === "name=cmn_notif_device^element=user")
+      rows = [{ sys_id: "f".repeat(32), sys_mod_count: "0", reference_cascade_rule: "cascade" }];
     const fields = url.searchParams.get("sysparm_fields").split(",");
     return Response.json({ result: rows.map(row => Object.fromEntries(fields.filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]]))) });
   };
@@ -115,5 +129,36 @@ test("disabled creation, activation and unlock preserve separate effects and nat
   });
   assert.equal(unlocked.record.locked_out, false);
   assert.equal(unlocked.record.notification, "1");
-  assert.deepEqual(methods, ["POST", "PATCH", "PATCH"]);
+  const read = await admin.handle("local_admin_user_get", { sys_id: id });
+  assert.equal(read.record.sys_mod_count, "2");
+  assessment = await admin.handle("local_admin_user_assess", { sys_id: id });
+  const updated = await admin.handle("local_admin_user_update_profile", {
+    sys_id: id, expected_mod_count: "2", assessment_id: assessment.assessment_id, operation_id: randomUUID(),
+    acknowledged_native_effects: [], profile: { title: "Support engineer" },
+  });
+  assert.equal(updated.record.title, "Support engineer");
+  for (const [action, kind, expectedVersion] of [
+    ["local_admin_user_lock", "lock", "3"], ["local_admin_user_deactivate_and_lock", "deactivate", "4"],
+  ]) {
+    assessment = await admin.handle("local_admin_user_assess", { sys_id: id });
+    const changed = await admin.handle(action, { sys_id: id, expected_mod_count: expectedVersion,
+      assessment_id: assessment.assessment_id, operation_id: randomUUID(),
+      acknowledged_native_effects: assessment.required_native_effects[kind] });
+    assert.equal(changed.record.notification, "1");
+    assert.equal(changed.record.title, "Support engineer");
+    assert.equal(changed.record.first_name, "Example");
+    assert.equal(changed.record.locked_out, true);
+    assert.equal(changed.record.active, kind === "lock");
+  }
+  const impact = await admin.handle("local_admin_user_delete_assess", { sys_id: id });
+  assert.deepEqual(impact.blocked, []);
+  const deleted = await admin.handle("local_admin_user_delete_administrative", {
+    sys_id: id, expected_mod_count: "5", expected_impact_sha256: impact.impact_sha256,
+    operation_id: randomUUID(), confirm: true, acknowledged_native_effects: impact.native_effects_declared,
+  });
+  assert.equal(deleted.parent_absent, true);
+  assert.equal(deleted.cleanup_complete, false);
+  assert.equal(deleted.native_observations[0].outcome, "deleted");
+  assert.equal((await admin.handle("local_admin_user_get", { sys_id: id })).found, false);
+  assert.deepEqual(methods, ["POST", "PATCH", "PATCH", "PATCH", "PATCH", "PATCH", "DELETE"]);
 });

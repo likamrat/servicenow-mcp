@@ -88,7 +88,9 @@ Native rules can create/synchronize notification devices and profiles or invoke
 revocation hooks on locked-account updates. Requested fields are read back;
 those wider effects are disclosed, not claimed universally verified.
 
-Deletion protects the current operator and retained users. It requires a fresh
+Deletion protects the current operator, retained/configured users, built-in
+system identities and users with administrative/elevated roles, including
+observed user cascades. It requires a fresh
 caller-bound assessment, target version, impact hash and exact native-effect
 acknowledgments. Active or role/group-linked users are not automatically
 excluded. The tool does not remove roles first, reassign work or manually delete
@@ -128,8 +130,9 @@ These operations are available through local stdio, not the Cowork connector.
 |---|---|
 | Business records | `local_record_schema`, `local_record_query`, `local_record_get`, `local_record_create`, `local_record_update`, `local_record_delete`. Includes knowledge bases/articles; excludes account, credential, access and executable configuration tables, including protected inherited tables. |
 | Exact user read | `local_admin_user_get`; a minimal profile/status view, not a credential or bulk-user export. |
-| Account lifecycle | `local_admin_user_assess`, `local_admin_user_create_disabled`, `local_admin_user_update_profile`, `local_admin_user_activate`, `local_admin_user_deactivate_and_lock`, `local_admin_user_lock`, `local_admin_user_unlock`. Reviewed account policy and eligible local-human identities required. |
-| Administrative deletion | `local_admin_user_delete_assess`, `local_admin_user_delete_administrative`; current impact/version guards and native-effect acknowledgments, with operator/retention protection. |
+| Account qualification | `inspect_user_account_policy`; inspect missing/matching/drifted private policy, inherited schema, source-rule content/templates and native uniqueness without approving a contract or writing an account. |
+| Account lifecycle | `local_admin_user_assess`, `local_admin_user_create_disabled`, `local_admin_user_update_profile`, `local_admin_user_activate`, `local_admin_user_deactivate_and_lock`, `local_admin_user_lock`, `local_admin_user_unlock`. Reviewed account policy and eligible local-human identities required. Existing access needs explicit coverage through current governed access policies, not fixture ownership. |
+| Administrative deletion | `local_admin_user_delete_assess`, `local_admin_user_delete_administrative`; current impact/version guards and native-effect acknowledgments, with operator/retention/system/administrator protection. |
 | Managed groups/roles | `local_admin_access_read` and group/role create/update, group deletion, direct membership/role add/remove tools. Requires account/access policies and installation-owned definition receipts. Namespaced nonprivileged scope and disabled/locked-user guards apply. Role deletion is assessment-only. |
 | Login illustration | `local_admin_set_branding_property`; only the existing `glide.ui.polaris.login.show_illustrations` string property. |
 | Draft colors/radius | `local_admin_patch_theme_style_pair`, `local_admin_restore_theme_style_pair`; a global unpublished draft owned by the configured source account, with two exclusive core styles and current version/hash guards. Paired writes are not atomic; complete originals are retained. |
@@ -141,10 +144,20 @@ Schema discovery includes inherited dictionary, choices and data-policy
 metadata. Discovery is not proof of effective write permission. Structured
 record filters combine with AND; use separate queries for alternatives.
 
+Activation changes only `active`; unlocking changes only `locked_out` and lets
+the native rule reset failed attempts. Neither changes notification preference,
+passwords, roles or memberships. Use a fresh assessment and its exact per-action
+native-effect list. Business assignments block lock/deactivation but are not
+automatic activation/unlock denials. Missing reviewed access coverage still
+blocks the latter, and unexpected native access changes leave an uncertain
+receipt rather than an implicit grant.
+
 Deletion impact reads paginate beyond 100 related records. Required target/rule
 versions remain strict; optional blank relationship versions stay blank, not
 zero. Unreadable/inconsistent evidence blocks assessment. Known relationships
 are not a complete hidden-cascade graph or proof of session revocation.
+Lost source responses remain uncertain even when later requested fields or
+parent absence are observed; no same-ID or new-ID replay is permitted.
 
 The tool set does not include password changes, adoption of existing definitions
 into the managed-definition store, role-definition deletion, SVG/JPEG or font

@@ -27,7 +27,7 @@ const tools = [
     description: "BACKEND ACCOUNT ADMIN: read one supplied user ID with a fixed minimal profile/status projection. No bulk users, contact, password/hash/token, Federated ID, role or credential values.",
     inputSchema: object({ sys_id: id }) },
   { name: "local_admin_user_assess", annotations: { readOnlyHint: true },
-    description: "BACKEND ACCOUNT ADMIN: assess one supplied root sys_user for bounded local-account profile/deactivation/lock support. Reports source-marker presence without exporting source/LDAP strings, protected/self/service identities, observed role/group/provider counts and business responsibilities. Saves a local versioned assessment; it is not user approval or effective source permission. Unknown/truncated/hidden coverage is not permission.",
+    description: "BACKEND ACCOUNT ADMIN: assess one supplied root sys_user for profile, activation, deactivation, lock and unlock. Returns per-action eligibility and exact status native-effect acknowledgments. Protects self/system/service/external identities; existing roles/groups need explicit current reviewed-access policy coverage. Business responsibilities block lock/deactivation, not activation/unlock. Saves a local versioned assessment, not approval or effective source permission. Unknown/truncated/hidden coverage is not permission.",
     inputSchema: object({ sys_id: id }) },
   { name: "local_admin_user_create_disabled", annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     description: "BACKEND ACCOUNT ADMIN: create a supplied native human username/profile explicitly inactive, locked and notification-disabled; no credentials/contact/access fields. Source unconditionally attempts an active primary-email-device child even without email; account for it, never silently delete it. Retains receipts and reconciles once without replay. Requires separately scoped account-creation approval.",
@@ -44,13 +44,13 @@ const tools = [
     description: "BACKEND ACCOUNT ADMIN: explicitly set locked_out=true only on an eligible supplied local user after current assessment/version and native-effect acknowledgment. Active and notification settings remain unchanged. Source sessions/OAuth/provider links may be revoked; conditional native lockout events may be created. No unlock, activation, direct credential/token/group/device operations.",
     inputSchema: object(target) },
   { name: "local_admin_user_activate", annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
-    description: "BACKEND ACCOUNT ADMIN: explicitly set active=true only on an eligible supplied native human after current assessment/version and native-effect acknowledgment. Lock and notification preference remain unchanged; activation does not unlock or set a password. Blocks self/protected/service/external/role/group/provider and observed business responsibilities. Source group/cache/session hooks remain enabled.",
+    description: "BACKEND ACCOUNT ADMIN: explicitly set active=true only on an eligible supplied native human after current assessment/version and native-effect acknowledgment. Lock and notification preference remain unchanged; activation does not unlock or set a password. Existing access requires explicit reviewed activation-policy coverage; no role or membership writes. Protects self/system/service/external/provider identities. Source group/cache/session hooks remain enabled and unexpected access changes leave an uncertain receipt.",
     inputSchema: object(statusTarget) },
   { name: "local_admin_user_unlock", annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     description: "BACKEND ACCOUNT ADMIN: explicitly set locked_out=false on an eligible supplied ACTIVE native human after current assessment/version and native-effect acknowledgment. Source clears failed attempts. Does not activate, change notifications/password/MFA/roles, or restore revoked tokens/provider links. Inactive-user unlock is not supported because source policy warns/retains lock.",
     inputSchema: object(statusTarget) },
 ];
-const unsupportedOperations = { delete: "Not implemented/advertised: use separately approved deactivate-and-retain. Native child/dynamic/history closure and effective delete permission are not qualified.",
+const unsupportedOperations = { delete: "Use the separate local_admin_user_delete_assess/local_admin_user_delete_administrative tools with current impact/version guards; lifecycle eligibility is not deletion permission.",
   access: "Explicit eligible activation/unlock only; no password/reset/MFA, provider/identity conversion, roles or groups." };
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -137,7 +137,8 @@ function classifyFailure(failure, observed, knownId) {
     return "rejected_source_acl";
   return "uncertain";
 }
-function createUserAccountOperations({ instance: INSTANCE, policy, list, request, record, claim, isAttempted, principal, directory }) {
+function createUserAccountOperations({ instance: INSTANCE, policy, list, request, record, claim, isAttempted, principal, directory,
+  checkSourcePolicy, reviewExistingAccess }) {
   const project = row => projectAccount(row, INSTANCE);
   if (typeof principal !== "string" || !principal || typeof directory !== "string" || policy.format !== 2 || policy.instance !== INSTANCE)
     throw new Error("Existing principal, private directory and matching source policy snapshot are required.");
@@ -168,9 +169,16 @@ function createUserAccountOperations({ instance: INSTANCE, policy, list, request
     return rows[0] || null;
   }
   async function checkPolicy() {
+    if (policy.schema_sha256) return checkSourcePolicy(policy);
     const rows = await bounded("sys_script", "collection=sys_user^active=true", "sys_id,sys_mod_count");
     const versions = rows.map(({ sys_id, sys_mod_count }) => ({ sys_id, sys_mod_count })).sort((a, b) => a.sys_id.localeCompare(b.sys_id));
     if (hash(versions) !== hash(policy.businessRuleVersions)) throw new Error("Source user business-rule policy changed or is not fully readable; refresh qualification.");
+  }
+  async function accessEvidence(sysId) {
+    const observed = {};
+    for (const [key, table] of [["roles", "sys_user_has_role"], ["groups", "sys_user_grmember"], ["providers", "provider_user_map"]])
+      observed[key] = (await bounded(table, `user=${sysId}`, "sys_id,sys_mod_count")).sort((a, b) => a.sys_id.localeCompare(b.sys_id));
+    return observed;
   }
   async function assess(sysId) {
     const row = await get(sysId, true);
@@ -191,26 +199,40 @@ function createUserAccountOperations({ instance: INSTANCE, policy, list, request
         policy_evidence_sha256: policy.sourceEvidenceSha256 } };
     const local = await bounded("sys_user", `sys_id=${sysId}^sourceISEMPTY^ldap_serverISEMPTY`, "sys_id", 2);
     if (!local.length || local[0].sys_id !== sysId) blocked.push("external_source_or_ldap_marker_or_omitted_evidence");
-    const observed = {};
+    const observed = await accessEvidence(sysId);
+    const accessFingerprint = hash(observed);
     for (const [key, table, query] of [
-      ["roles", "sys_user_has_role", `user=${sysId}`], ["groups", "sys_user_grmember", `user=${sysId}`],
-      ["providers", "provider_user_map", `user=${sysId}`], ["active_tasks", "task", `assigned_to=${sysId}^active=true`],
+      ["active_tasks", "task", `assigned_to=${sysId}^active=true`],
       ["owned_bases", "kb_knowledge_base", `owner=${sysId}`], ["managed_groups", "sys_user_group", `manager=${sysId}`],
       ["direct_reports", "sys_user", `manager=${sysId}`], ["delegations_from", "sys_user_delegate", `user=${sysId}`],
       ["delegations_to", "sys_user_delegate", `delegate=${sysId}`],
     ]) observed[key] = await bounded(table, query, "sys_id,sys_mod_count");
-    if (observed.roles.length) blocked.push("roles_present_requiring_separate_privilege_review");
-    if (observed.groups.length) blocked.push("memberships_present_requiring_separate_access_review");
+    let reviewedAccess = null;
+    if ((observed.roles.length || observed.groups.length) && policy.reviewedAccessPolicies?.length) {
+      reviewedAccess = await reviewExistingAccess(sysId, policy.reviewedAccessPolicies);
+    } else {
+      if (observed.roles.length) blocked.push("roles_present_requiring_separate_privilege_review");
+      if (observed.groups.length) blocked.push("memberships_present_requiring_separate_access_review");
+    }
     if (observed.providers.length) blocked.push("provider_linked_identity");
     const responsibilities = ["active_tasks", "owned_bases", "managed_groups", "direct_reports", "delegations_from", "delegations_to"]
       .filter((key) => observed[key].length);
     const eligibility = { profile: blocked.length === 0, lock: blocked.length === 0 && responsibilities.length === 0,
-      deactivate: blocked.length === 0 && responsibilities.length === 0, activate: blocked.length === 0 && responsibilities.length === 0,
-      unlock: blocked.length === 0 && responsibilities.length === 0 && bool(row.active) };
+      deactivate: blocked.length === 0 && responsibilities.length === 0,
+      activate: blocked.length === 0 && (!reviewedAccess || reviewedAccess.activation_reviewed),
+      unlock: blocked.length === 0 && bool(row.active) && (!reviewedAccess || reviewedAccess.activation_reviewed) };
+    const requiredEffects = Object.fromEntries([
+      ["profile", null], ["lock", { locked_out: true }], ["deactivate", { active: false, locked_out: true }],
+      ["activate", { active: true }], ["unlock", { locked_out: false }],
+    ].map(([kind, values]) => [kind, values ? effectList({
+      lock: "local_admin_user_lock", deactivate: "local_admin_user_deactivate_and_lock",
+      activate: "local_admin_user_activate", unlock: "local_admin_user_unlock",
+    }[kind], row, values) : "Depends on the supplied profile fields; name changes synchronize live_profile and any update while locked can revoke sessions/OAuth."]));
     const fingerprint = hash({ row, sourceMarkersEmpty: local.length === 1,
       observed: Object.fromEntries(Object.entries(observed).map(([key, rows]) => [key, rows.sort((a, b) => a.sys_id.localeCompare(b.sys_id))])),
-      blocked, responsibilities, policy: policy.sourceEvidenceSha256 });
-    return { row, fingerprint, summary: { sys_id: sysId, sys_mod_count: row.sys_mod_count, eligibility, blocked,
+      blocked, responsibilities, reviewedAccess, policy: hash(policy) });
+    return { row, fingerprint, accessFingerprint, reviewedAccess, summary: { sys_id: sysId, sys_mod_count: row.sys_mod_count, eligibility, blocked,
+      required_native_effects: requiredEffects, reviewed_access: reviewedAccess,
       responsibility_tables: responsibilities, observed_counts: Object.fromEntries(Object.entries(observed).map(([key, rows]) => [key, rows.length])),
       classification: "Native-root account with no observed external/service/access markers; not proof of all identity-provider governance.",
       coverage: "Bounded read-visible rows only; not universal dependency absence, effective permission, or user consent.",
@@ -244,12 +266,15 @@ function createUserAccountOperations({ instance: INSTANCE, policy, list, request
     pendingConflict(args, creating);
     await checkPolicy();
     let before;
+    let beforeAccess;
+    let beforeAccessFingerprint;
     let values;
     let effects = creating ? [...CREATE_EFFECTS] : [];
     if (creating) {
       if (args.user_name === principal.toLowerCase() || policy.protectedNames.includes(args.user_name)) throw new Error("Reserved/current-principal username.");
       if ((await bounded("sys_user", `user_name=${args.user_name}`, "sys_id", 2)).length) throw new Error("Username already exists; no create sent.");
-      values = { user_name: args.user_name, ...args.profile, active: false, locked_out: true, notification: "1", identity_type: "human" };
+      values = { user_name: args.user_name, ...args.profile, active: false, locked_out: true, notification: "1", identity_type: "human",
+        internal_integration_user: false, web_service_access_only: false };
     } else {
       const saved = load(`${args.assessment_id}.assessment.json`);
       string(saved.fingerprint, HASH, "assessment fingerprint");
@@ -262,6 +287,8 @@ function createUserAccountOperations({ instance: INSTANCE, policy, list, request
         local_admin_user_activate: "activate", local_admin_user_unlock: "unlock", local_admin_user_deactivate_and_lock: "deactivate" }[name];
       if (!fresh.summary.eligibility[kind]) throw new Error("Account is outside this bounded local-account operation; inspect assessment blockers.");
       before = fresh.row;
+      beforeAccess = fresh.reviewedAccess;
+      beforeAccessFingerprint = fresh.accessFingerprint;
       values = kind === "profile" ? { ...args.profile } : kind === "lock" ? { locked_out: true }
         : kind === "activate" ? { active: true } : kind === "unlock" ? { locked_out: false } : { active: false, locked_out: true };
       effects = effectList(name, before, values);
@@ -309,6 +336,8 @@ function createUserAccountOperations({ instance: INSTANCE, policy, list, request
         } else after = await get(args.sys_id, true);
         if (!after || !matches(after, values)) throw new Error("Requested source fields were not all confirmed.");
         requestedFieldsObserved = true;
+        if (creating && !failure && response?.result?.sys_id !== after.sys_id)
+          throw new Error("Create response identity was not confirmed; matching state is not write attribution.");
         if (after.sys_class_name !== "sys_user" || bool(after.internal_integration_user) || bool(after.web_service_access_only) ||
             after.identity_type !== "human") throw new Error("Source identity/service guard changed.");
         if (creating && !sourceRejected && (await assess(after.sys_id)).summary.blocked.length)
@@ -319,15 +348,22 @@ function createUserAccountOperations({ instance: INSTANCE, policy, list, request
           field !== "sys_mod_count" && !(field === "failed_attempts" && name === "local_admin_user_unlock") &&
           !Object.hasOwn(values, field) && after[field] !== before[field])))
           throw new Error("Source changed an unrequested status/identity or did not advance version.");
+        if (beforeAccess) {
+          const currentAccess = await reviewExistingAccess(args.sys_id, policy.reviewedAccessPolicies);
+          if (currentAccess.fingerprint !== beforeAccess.fingerprint)
+            throw new Error("Source changed existing access during lifecycle mutation; retain and review native effects without replay.");
+        }
+        if (!creating && hash(await accessEvidence(args.sys_id)) !== beforeAccessFingerprint)
+          throw new Error("Source changed existing access during lifecycle mutation; retain and review native effects without replay.");
       } catch (error) { reconciliationFailure = error; }
     }
-    if (sourceRejected || reconciliationFailure) {
+    if (failure || reconciliationFailure) {
       const accessFailure = [401, 403].includes(reconciliationFailure?.diagnostic?.status) ? reconciliationFailure : null;
       const diagnosticFailure = accessFailure || failure || reconciliationFailure;
       outcome.status = classifyFailure(diagnosticFailure, after, outcome.sys_id);
       outcome.reason = diagnosticFailure?.diagnostic?.status === 401 ? "Saved login rejected; no further source requests."
         : sourceRejected ? `Source request rejected HTTP ${failure.diagnostic.status}; matching observed state cannot establish successful write attribution.`
-          : reconciliationFailure.message;
+          : reconciliationFailure?.message || "Source response was lost; observed fields do not establish write attribution.";
       outcome.diagnostic = diagnosticFailure?.diagnostic;
       outcome.write_diagnostic = failure?.diagnostic;
       outcome.reconciliation_diagnostic = reconciliationFailure?.diagnostic;

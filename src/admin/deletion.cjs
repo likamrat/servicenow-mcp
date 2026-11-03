@@ -1,4 +1,5 @@
 const { tools, effects, createAdministrativeImpact } = require("./administrative-impact.cjs");
+const { protectedAccounts } = require("./contracts.cjs");
 const references = [
   ["sys_user_has_role", "user"], ["sys_user_grmember", "user"], ["provider_user_map", "user"],
   ["sys_user_delegate", "user"], ["sys_user_delegate", "delegate"], ["live_profile", "document"],
@@ -24,7 +25,8 @@ function createDeletion({ source, state, principal }) {
     return found.map(row => Object.fromEntries(fields.split(",").map(field => [field, row[field]])));
   }
   async function handle(name, args) {
-    const impact = createAdministrativeImpact({ rows, principal, retainedIds: state.retainedIds(), references });
+    const impact = createAdministrativeImpact({ rows, principal, retainedIds: state.retainedIds(), references,
+      ...protectedAccounts(state.directory, source.instance) });
     const before = await impact.assess({ sys_id: args.sys_id });
     if (name === "local_admin_user_delete_assess") return before;
     if (before.blocked.length) throw new Error("Administrative deletion blocked:" + before.blocked.join(","));
@@ -42,8 +44,7 @@ function createDeletion({ source, state, principal }) {
       outcome.parent_absent = !(await rows("sys_user", `sys_id=${args.sys_id}`, "sys_id", 2)).length;
       await impact.verify(before, outcome.native_observations);
       outcome.retained_references = outcome.native_observations.filter(row => row.outcome === "retained_reference");
-      if (failure?.diagnostic?.status >= 400 && failure.diagnostic.status < 500)
-        throw new Error("Rejected source deletion cannot be attributed from later absence.");
+      if (failure) throw new Error("Rejected or unacknowledged source deletion cannot be attributed from later absence.");
       if (!outcome.parent_absent || outcome.native_observations.some(row => row.expected_effect_confirmed === false))
         throw new Error("Parent or declared native effect not confirmed.");
       outcome.status = "confirmed";

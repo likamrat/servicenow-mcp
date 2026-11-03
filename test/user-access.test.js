@@ -13,7 +13,7 @@ function fixture(t) {
   const user = (number, login, active = "false") => ({
     sys_id: id(number), sys_mod_count: "0", user_name: login, name: login, first_name: "", last_name: "", title: "", email: "",
     active, locked_out: "true", notification: "1", identity_type: "human", sys_class_name: "sys_user",
-    internal_integration_user: "false", web_service_access_only: "false", source: "", ldap_server: "",
+    internal_integration_user: "false", web_service_access_only: "false", source: "", ldap_server: "", failed_attempts: "0",
   });
   const role = (number, name) => ({ sys_id: id(number), sys_mod_count: "0", name, sys_scope: "global",
     elevated_privilege: "false", scoped_admin: "false", can_delegate: "false", assignable_by: "", includes_roles: "", grantable: "true" });
@@ -44,6 +44,7 @@ function fixture(t) {
         return mode.contradictoryJoin || (part.endsWith("ISNOTEMPTY") ? resolved : !resolved);
       }
       if (part.includes("ISNOTEMPTY")) return Boolean(row[part.replace("ISNOTEMPTY", "")]);
+      if (part.endsWith("ISEMPTY")) return row[part.replace("ISEMPTY", "")] === "";
       const match = /^([\w.]+)(IN|=|>)(.*)$/.exec(part);
       if (!match) throw new Error(`Unhandled synthetic filter ${part}`);
       const [, field, operator, value] = match;
@@ -112,7 +113,7 @@ function fixture(t) {
       rows = [{ sys_id: id(3000 + Object.keys(tables).indexOf(name)), sys_mod_count: "0", collection: name, active: "true",
         name: "Synthetic policy", when: "after", order: "100", action_insert: "true", action_update: "true",
         action_delete: "false", action_query: "false", filter_condition: "", condition: "", script: "PRIVATE_RULE_BODY",
-        sys_overrides: "", role_conditions: "", abort_action: "false", sys_scope: "global", sys_domain: "global" }]
+        template: "", sys_overrides: "", role_conditions: "", abort_action: "false", sys_scope: "global", sys_domain: "global" }]
         .filter(row => matches(row, query));
     } else {
       rows = (tables[table] || []).filter(row => matches(row, query));
@@ -176,6 +177,124 @@ test("reviewed generic access policy applies to unseen users, reuses access and 
   }
   assert.deepEqual(f.writes().map(row => row.table), ["sys_user_grmember", "sys_user_has_role", "sys_user_grmember", "sys_user_has_role"]);
   assert.ok(f.writes().every(row => !Object.hasOwn(row.values, "inherited")), "Read-only native inheritance is never fabricated");
+});
+
+async function lifecycleFixture(t, activate = true) {
+  const f = fixture(t);
+  f.tables.sys_user.push(f.user(2, "existing-support-user"));
+  f.tables.sys_user_grmember.push({ sys_id: id(70), sys_mod_count: "", user: id(2), group: id(20) });
+  f.tables.sys_user_has_role.push(
+    { sys_id: id(71), sys_mod_count: "0", user: id(2), role: id(30), state: "active", inherited: "false", granted_by: "" },
+    { sys_id: id(72), sys_mod_count: "", user: id(2), role: id(31), state: "active", inherited: "true", granted_by: id(30) });
+  f.tables.task = [{ sys_id: id(73), sys_mod_count: "1", assigned_to: id(2), active: "true" }];
+  await reviewedPolicy(f, { activate });
+  const evidence = await f.admin.handle("inspect_user_account_policy", {});
+  const policy = { format: 2, instance: "https://service.example.invalid", sourceEvidenceSha256: "a".repeat(64),
+    protectedIds: [], protectedNames: [], businessRuleVersions: evidence.businessRuleVersions,
+    schema_sha256: evidence.schema_sha256, rules_sha256: evidence.rules_sha256,
+    reviewedAccessPolicies: ["support-assignee"] };
+  fs.writeFileSync(path.join(f.directory, "account-contract.json"), JSON.stringify(policy));
+  return { ...f, policy };
+}
+
+test("native lifecycle supports reviewed existing access without treating business assignments as activation denial", async t => {
+  const f = await lifecycleFixture(t);
+  const before = structuredClone({ roles: f.tables.sys_user_has_role, groups: f.tables.sys_user_grmember });
+  let assessment = await f.admin.handle("local_admin_user_assess", { sys_id: id(2) });
+  assert.equal(assessment.eligibility.activate, true);
+  assert.equal(assessment.eligibility.lock, false);
+  assert.equal(assessment.eligibility.deactivate, false);
+  assert.deepEqual(assessment.responsibility_tables, ["active_tasks"]);
+  const activated = await f.admin.handle("local_admin_user_activate", {
+    sys_id: id(2), expected_mod_count: "0", assessment_id: assessment.assessment_id, operation_id: randomUUID(),
+    acknowledged_native_effects: assessment.required_native_effects.activate,
+  });
+  assert.equal(activated.record.active, "true");
+  assert.equal(activated.record.locked_out, "true");
+  assessment = await f.admin.handle("local_admin_user_assess", { sys_id: id(2) });
+  assert.equal(assessment.eligibility.unlock, true);
+  const unlocked = await f.admin.handle("local_admin_user_unlock", {
+    sys_id: id(2), expected_mod_count: "1", assessment_id: assessment.assessment_id, operation_id: randomUUID(),
+    acknowledged_native_effects: assessment.required_native_effects.unlock,
+  });
+  assert.equal(unlocked.record.locked_out, "false");
+  assert.equal(unlocked.record.notification, "1");
+  assert.deepEqual({ roles: f.tables.sys_user_has_role, groups: f.tables.sys_user_grmember }, before);
+  assert.deepEqual(f.writes().map(row => [row.method, row.table, row.values]),
+    [["PATCH", "sys_user", { active: true }], ["PATCH", "sys_user", { locked_out: false }]]);
+});
+
+test("existing-access lifecycle requires explicit policy coverage and stops on privilege, policy or relationship drift", async t => {
+  const f = await lifecycleFixture(t);
+  const assess = () => f.admin.handle("local_admin_user_assess", { sys_id: id(2) });
+  f.policy.reviewedAccessPolicies = [];
+  fs.writeFileSync(path.join(f.directory, "account-contract.json"), JSON.stringify(f.policy));
+  assert.equal((await assess()).eligibility.activate, false);
+  f.policy.reviewedAccessPolicies = ["support-assignee"];
+  fs.writeFileSync(path.join(f.directory, "account-contract.json"), JSON.stringify(f.policy));
+  const assessment = await assess();
+  const args = { sys_id: id(2), expected_mod_count: "0", assessment_id: assessment.assessment_id,
+    operation_id: randomUUID(), acknowledged_native_effects: assessment.required_native_effects.activate };
+  f.tables.sys_user_grmember[0].sys_mod_count = "1";
+  await assert.rejects(f.admin.handle("local_admin_user_activate", args), /evidence changed/);
+  f.tables.sys_user_grmember[0].sys_mod_count = "";
+  f.tables.sys_user_role[0].scoped_admin = "true";
+  await assert.rejects(assess(), /administrative/);
+  f.tables.sys_user_role[0].scoped_admin = "false";
+  f.tables.sys_security_acl[0].script = "CHANGED";
+  await assert.rejects(assess(), /policy changed/);
+  assert.equal(f.writes().length, 0);
+});
+
+test("nonactivation access policies never qualify restoring login access", async t => {
+  const f = await lifecycleFixture(t, false);
+  const assessment = await f.admin.handle("local_admin_user_assess", { sys_id: id(2) });
+  assert.equal(assessment.eligibility.profile, true);
+  assert.equal(assessment.eligibility.activate, false);
+  assert.equal(assessment.eligibility.unlock, false);
+  assert.equal(f.writes().length, 0);
+});
+
+test("native lifecycle response loss remains uncertain even when the requested state is visible", async t => {
+  const f = await lifecycleFixture(t);
+  const assessment = await f.admin.handle("local_admin_user_assess", { sys_id: id(2) });
+  const args = { sys_id: id(2), expected_mod_count: "0", assessment_id: assessment.assessment_id,
+    operation_id: randomUUID(), acknowledged_native_effects: assessment.required_native_effects.activate };
+  f.mode.loseTable = "sys_user";
+  await assert.rejects(f.admin.handle("local_admin_user_activate", args), error => {
+    assert.equal(error.outcome.status, "uncertain");
+    assert.equal(error.outcome.source_write_confirmed, false);
+    assert.equal(error.outcome.requested_state_observed, true);
+    return true;
+  });
+  await assert.rejects(f.restart().handle("local_admin_user_activate", { ...args, operation_id: randomUUID() }), /unresolved/);
+  assert.equal(f.writes().length, 1);
+});
+
+test("unexpected native access changes remain uncertain instead of claiming lifecycle success", async t => {
+  const f = await lifecycleFixture(t);
+  const assessment = await f.admin.handle("local_admin_user_assess", { sys_id: id(2) });
+  f.mode.afterWrite = () => { f.tables.sys_user_grmember[0].sys_mod_count = "1"; };
+  await assert.rejects(f.admin.handle("local_admin_user_activate", {
+    sys_id: id(2), expected_mod_count: "0", assessment_id: assessment.assessment_id, operation_id: randomUUID(),
+    acknowledged_native_effects: assessment.required_native_effects.activate,
+  }), error => error.outcome.status === "uncertain" && /changed existing access/.test(error.message));
+  assert.equal(f.writes().length, 1);
+});
+
+test("native access creation on a previously roleless account is not silently accepted", async t => {
+  const f = await lifecycleFixture(t);
+  f.tables.sys_user_has_role.length = 0;
+  f.tables.sys_user_grmember.length = 0;
+  const assessment = await f.admin.handle("local_admin_user_assess", { sys_id: id(2) });
+  f.mode.afterWrite = () => {
+    f.tables.sys_user_grmember.push({ sys_id: id(70), sys_mod_count: "", user: id(2), group: id(20) });
+  };
+  await assert.rejects(f.admin.handle("local_admin_user_activate", {
+    sys_id: id(2), expected_mod_count: "0", assessment_id: assessment.assessment_id, operation_id: randomUUID(),
+    acknowledged_native_effects: assessment.required_native_effects.activate,
+  }), error => error.outcome.status === "uncertain" && /changed existing access/.test(error.message));
+  assert.equal(f.writes().length, 1);
 });
 
 test("policy listing distinguishes unevaluated readiness from disabled policy without qualifying it", async t => {

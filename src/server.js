@@ -51,7 +51,7 @@ function createApp() {
     if (method === "ping") return res.json({ jsonrpc: "2.0", id, result: {} });
     if (method === "initialize") return res.json({ jsonrpc: "2.0", id, result: {
       protocolVersion: "2025-03-26", capabilities: { tools: {}, resources: {} },
-      serverInfo: { name: "servicenow-mcp-server", version: "1.0.0" },
+      serverInfo: { name: "servicenow-mcp-server", title: "ServiceNow", version: "1.0.0" },
     } });
     if (method === "tools/list") return res.json({ jsonrpc: "2.0", id, result: { tools } });
     if (method === "resources/list") return res.json({ jsonrpc: "2.0", id, result: { resources: [] } });

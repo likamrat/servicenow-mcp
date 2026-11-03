@@ -31,6 +31,11 @@ The plugin release, MCP `serverInfo` version and Agent Plugins schema version
 describe different things; a packaging update need not change protocol metadata.
 Test the installed plugin's supported update path as well as local packaging.
 Do not change or copy a user's external provider binding or operation history.
+Use MCP `serverInfo.title: "ServiceNow"` for display while preserving the
+registration key and protocol names. Test initialization on every transport;
+then verify the actual installed client's label. A protocol-title assertion
+cannot prove that a host which derives labels from registration keys changed
+its UI. See the [compatibility guidance](SETUP.md#update-an-installed-plugin).
 
 The native manifest is [`mcp.json`](../mcp.json). The generated authenticated
 HTTP contract is

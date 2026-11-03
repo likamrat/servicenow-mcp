@@ -14,7 +14,8 @@ const path = require("node:path");
 const { tools: accountTools, createUserAccountOperations } = require("./user-account.cjs");
 const { tools: importTools, createLogoImportOperations, createLogoImportPolicy } = require("./logo-import.cjs");
 const { createLogoStaging } = require("./staging.cjs");
-const { reviewedContract } = require("./contracts.cjs");
+const { reviewedContract, protectedAccounts } = require("./contracts.cjs");
+const { createAccountPolicyInspection } = require("./account-policy.cjs");
 const { tools: accessTools, createAccessOperations } = require("./access.cjs");
 const { tools: definitionTools, createDefinitionOperations } = require("./definitions.cjs");
 const { assertResourceClear } = require("./resource-guard.cjs");
@@ -51,13 +52,14 @@ function createAdmin(config) {
   const deletion = createDeletion({ source, state, principal: config.username });
   const users = createUsers({ source, state, records, incidents, principal: config.username });
   const userAccess = createUserAccess({ source, state, records, principal: config.username });
+  const accountPolicy = createAccountPolicyInspection({ source, records, directory: state.directory });
   const dependencies = { ...source, ...state, principal: config.username, instance, directory: config.directory };
   const themes = createThemeStyleOperations(dependencies);
   const logos = createLogoRestoreOperations(dependencies);
   const conditional = [...accountTools.filter(tool => tool.name !== "local_admin_user_get"), ...importTools,
     ...accessTools.filter(tool => accessNames.has(tool.name)), ...definitionTools.filter(tool => definitionNames.has(tool.name))]
     .map(tool => ({ ...tool, description: "Requires an operator-reviewed source contract; unavailable until configured. Writes reject contract drift. " + tool.description }));
-  const tools = [...reads.tools, ...records.tools, ...incidents.tools, ...users.tools, ...userAccess.tools, ...deletion.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
+  const tools = [...reads.tools, ...records.tools, ...incidents.tools, ...users.tools, ...userAccess.tools, ...accountPolicy.tools, ...deletion.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
   const routes = new Map([
     ...records.tools.map(tool => [tool.name, records.handle]),
     ...deletion.tools.map(tool => [tool.name, deletion.handle]),
@@ -96,7 +98,7 @@ function createAdmin(config) {
   }
   async function handle(name, args = {}, callerKey = `local:${config.username}`) {
     const tool = tools.find(tool => tool.name === name);
-    if (!tool) throw new Error("Operation not available in this portable build; consult its capability prerequisites.");
+    if (!tool) throw new Error("Operation not available in this ServiceNow build; consult its capability prerequisites.");
     if (reads.tools.some(item => item.name === name)) return reads.handle(name, args);
     validate(tool.inputSchema, args);
     return state.run(async () => {
@@ -108,6 +110,7 @@ function createAdmin(config) {
       if (incidents.tools.some(item => item.name === name)) return incidents.handle(name, args, callerKey);
       if (users.tools.some(item => item.name === name)) return users.handle(name, args, callerKey);
       if (userAccess.tools.some(item => item.name === name)) return userAccess.handle(name, args, callerKey);
+      if (name === "inspect_user_account_policy") return accountPolicy.inspect();
       if (name === "local_admin_patch_theme_style_pair" && state.pendingTheme(args.theme_id))
         throw new Error("Earlier theme operation unresolved; reconcile or use its guarded restoration, not a new patch UUID.");
       if (routes.has(name)) {
@@ -120,9 +123,11 @@ function createAdmin(config) {
         if (!tool.annotations.readOnlyHint && state.unresolved("sys_user", args.sys_id))
           throw new Error("Earlier account/deletion outcome unresolved; no new UUID replay.");
         const policy = reviewedContract("account", state.directory, instance);
-        policy.protectedIds = [...new Set([...policy.protectedIds, ...state.retainedIds()])];
-        policy.protectedNames = [...new Set([...policy.protectedNames, "admin", "guest", "system"])];
-        return createUserAccountOperations({ ...dependencies, policy }).handle(name, args);
+        const protectedUsers = protectedAccounts(state.directory, instance);
+        policy.protectedIds = [...new Set([...protectedUsers.protectedIds, ...state.retainedIds()])];
+        policy.protectedNames = protectedUsers.protectedNames;
+        return createUserAccountOperations({ ...dependencies, policy,
+          checkSourcePolicy: accountPolicy.check, reviewExistingAccess: userAccess.reviewExisting }).handle(name, args);
       }
       if (accessNames.has(name) || definitionNames.has(name)) {
         const policy = reviewedContract("account", state.directory, instance);

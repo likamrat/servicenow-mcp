@@ -88,6 +88,10 @@ Export-ModuleMember -Function Get-ServiceNowStoredCredential
   assert.equal(errors, "");
   const responses = output.trim().split("\n").map(JSON.parse);
   assert.equal(responses[0].result.serverInfo.version, "1.0.0");
+  assert.equal(responses[0].result.serverInfo.name, "servicenow-mcp");
+  assert.equal(responses[0].result.serverInfo.title, "ServiceNow");
+  assert.deepEqual(Object.keys(manifest.mcpServers), ["servicenow-portable"],
+    "A display-name correction must not create another server or invalidate registration-bound approvals");
   const advertised = responses[1].result.tools;
   for (const tool of require("../contracts/cowork-authenticated-tools.json").tools)
     assert.deepEqual(advertised.find(item => item.name === tool.name), tool, `Protected packaged entrypoint exposes ${tool.name}`);

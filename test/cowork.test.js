@@ -66,6 +66,10 @@ test("the authenticated interface gates all ten tools and exposes only protected
     assert.match(denied.headers.get("WWW-Authenticate"), /oauth-protected-resource\/mcp/);
   }
   const listed = await (await rpc("tools/list")).json();
+  const initialized = await (await rpc("initialize")).json();
+  assert.equal(initialized.result.serverInfo.title, "ServiceNow");
+  assert.equal(initialized.result.serverInfo.name, "servicenow-mcp");
+  assert.equal(tools.some(tool => tool.name === "inspect_user_account_policy"), false);
   assert.deepEqual(listed.result.tools, tools.slice(0, 10));
   assert.equal(tools.length, 22);
   const read = await (await rpc("tools/call", { name: "get_incident", arguments: { number: "INC0000001" } })).json();

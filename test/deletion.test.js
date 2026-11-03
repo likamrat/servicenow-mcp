@@ -18,6 +18,7 @@ function fixture(t) {
   const children = Array.from({ length: 101 }, (_, index) => ({
     sys_id: (index + 1).toString(16).padStart(32, "0"), sys_mod_count: "", user: id,
   }));
+  const roles = [], definitions = [];
   const fetchImpl = async (raw, options) => {
     const url = new URL(raw);
     const table = url.pathname.split("/")[4];
@@ -37,11 +38,16 @@ function fixture(t) {
         const cursor = query.match(/\^sys_id>([a-f0-9]+)/)?.[1] || "";
         rows = present ? children.filter(row => row.sys_id > cursor).slice(0, 100) : [];
       } else if (query.startsWith("sys_id=")) rows = present ? children.filter(row => row.sys_id === query.slice(7)) : [];
-    } else if (table === "sys_dictionary" && query === "name=sys_user_grmember^element=user")
+    } else if (table === "sys_user_has_role") {
+      const cursor = query.match(/\^sys_id>([a-f0-9]+)/)?.[1] || "";
+      rows = roles.filter(row => row.sys_id > cursor);
+    }
+    else if (table === "sys_user_role") rows = definitions.filter(row => query === `sys_id=${row.sys_id}`);
+    else if (table === "sys_dictionary" && query === "name=sys_user_grmember^element=user")
       rows = [{ sys_id: "c".repeat(32), sys_mod_count: "0", reference_cascade_rule: "cascade" }];
     return Response.json({ result: rows });
   };
-  return { directory, id, operator, user, children, deny: () => { deny = true; }, writes: () => writes,
+  return { directory, id, operator, user, children, roles, definitions, deny: () => { deny = true; }, writes: () => writes,
     admin: createAdmin({ instance: "https://service.example.invalid", username: "operator", password: "synthetic-only", directory, fetchImpl }) };
 }
 test("administrative deletion pages beyond100, preserves blank child versions and confirms parent separately", async (t) => {
@@ -74,6 +80,27 @@ test("operator, retained users and stale impact are rejected before deletion", a
     sys_id: f.id, expected_mod_count: "4", expected_impact_sha256: "0".repeat(64), operation_id: randomUUID(),
     confirm: true, acknowledged_native_effects: impact.native_effects_declared,
   }), /impact changed/);
+  assert.equal(f.writes(), 0);
+});
+test("administrative deletion protects built-in system identities and administrator roles without a fixture restriction", async t => {
+  const f = fixture(t);
+  for (const user_name of ["admin", "SYSTEM", "guest", "mms-service-account", "sharedservice.worker"]) {
+    f.user.user_name = user_name;
+    const impact = await f.admin.handle("local_admin_user_delete_assess", { sys_id: f.id });
+    assert.ok(impact.blocked.includes("protected_system_identity"), user_name);
+    await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", {
+      sys_id: f.id, expected_mod_count: "4", expected_impact_sha256: impact.impact_sha256,
+      operation_id: randomUUID(), confirm: true, acknowledged_native_effects: impact.native_effects_declared,
+    }), /blocked/);
+  }
+  f.user.user_name = "ordinary-looking-admin-login";
+  f.roles.push({ sys_id: "d".repeat(32), sys_mod_count: "", user: f.id, role: "e".repeat(32) });
+  f.definitions.push({ sys_id: "e".repeat(32), sys_mod_count: "0", name: "application_operator",
+    elevated_privilege: "false", scoped_admin: "true" });
+  assert.ok((await f.admin.handle("local_admin_user_delete_assess", { sys_id: f.id })).blocked.includes("protected_administrator_role"));
+  f.definitions[0].scoped_admin = "false";
+  f.definitions[0].name = "admin";
+  assert.ok((await f.admin.handle("local_admin_user_delete_assess", { sys_id: f.id })).blocked.includes("protected_administrator_role"));
   assert.equal(f.writes(), 0);
 });
 test("source denial retains uncertainty and blocks a different-UUID deletion replay", async (t) => {

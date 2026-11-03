@@ -4,8 +4,8 @@
   "plugins": [
     {
       "name": "servicenow-mcp",
-      "description": "ServiceNow records, guarded administration and portable operator skills.",
-      "version": "1.1.1",
+      "description": "ServiceNow records, qualified account lifecycle and guarded administration.",
+      "version": "1.2.0",
       "source": "./"
     }
   ]

@@ -90,7 +90,7 @@ Start a new chat with the plugin enabled and ask:
 
 > Find recent ServiceNow incidents about VPN.
 
-Copilot should use `servicenow-portable` and return matching records with source
+Copilot should use **ServiceNow** and return matching records with source
 links, or an empty result. Check that any returned link points to your instance.
 This first lookup does not need an account/access policy file.
 
@@ -103,6 +103,23 @@ the plugin does not grant those permissions.
 Choose **Update plugin**, then start a new chat. Keep your existing connection,
 credential provider and operation-history directory; no re-enrollment is needed.
 
+The server advertises the display title **ServiceNow**. The plugin identity
+`servicenow-mcp@servicenow-community`, internal MCP name `servicenow-mcp` and
+legacy registration key `servicenow-portable` remain stable. "Portable" was a
+packaging identifier, not a separate ServiceNow product or capability limit.
+Do not add a second server or rename the key to change its label: client
+approvals may be tied to that key.
+
+Some clients format the registration key instead of honoring MCP
+`serverInfo.title`. If your updated client still shows "Servicenow Portable",
+the server handshake alone is **not** a verified UI fix. Use only a
+host-supported display-name override that preserves the registration, or a
+host-supported migration that retains bindings and approvals. The Agent Plugins
+1.0 MCP manifest has no display-name/alias field; adding an invented property
+does not solve this. Never edit private host databases or silently recreate
+approval state. Keep the existing connection until the host supports that
+display correction, and verify both Customize and a fresh tool invocation.
+
 ### If the connection fails
 
 | What you see | What to do |
@@ -113,6 +130,7 @@ credential provider and operation-history directory; no re-enrollment is needed.
 | `SN_IMPORT_FAILED`, `SN_GETTER_FAILED` or `SN_PROVIDER_RESULT_MISMATCH` | Ask the provider's owner to check its export, access to the protected store, and the exact instance/types required in step 1. |
 | Authentication rejected | Stop repeated attempts. Check the configured account and provider through your approved authentication-repair process. |
 | Source access denied | Ask the ServiceNow administrator about the specific denied read. A working login does not grant record access. |
+| Missing operator-reviewed account source contract | Run `inspect_user_account_policy`, review actual source effects, and complete the [native account qualification](OPERATIONS.md#native-account-and-managed-access-contracts) in the existing history directory. This is a setup gap, not proof that ServiceNow disallows account changes. |
 | Tools missing after installation or update | Check that the plugin is enabled and open a new chat. |
 
 Preserve the server name and exact error when asking for help, but omit secrets.
