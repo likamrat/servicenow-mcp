@@ -100,27 +100,45 @@ the plugin does not grant those permissions.
 
 ### Update an installed plugin
 
-Choose **Update plugin**, then start a new chat. Keep your existing connection,
-credential provider and operation-history directory; no re-enrollment is needed.
+Version 2.0.0 replaces the MCP registration key `servicenow-portable` with
+`ServiceNow`, preserving the exact capitalization. Version 1.2.0 supplied
+`serverInfo.title`, but the Copilot app still displayed "Servicenow Portable"
+on tool invocations. The registration key is the supported manifest input for
+this correction; Agent Plugins 1.0 has no separate display-name field.
 
-The server advertises the display title **ServiceNow**. The plugin identity
-`servicenow-mcp@servicenow-community`, internal MCP name `servicenow-mcp` and
-legacy registration key `servicenow-portable` remain stable. "Portable" was a
-packaging identifier, not a separate ServiceNow product or capability limit.
-Do not add a second server or rename the key to change its label: client
-approvals may be tied to that key.
+The plugin identity remains `servicenow-mcp@servicenow-community`, and the
+internal MCP protocol name remains `servicenow-mcp`. Keep the existing
+`PLUGIN_DATA` connection file, protected credential provider and external
+operation-history directory. No credential re-enrollment, state migration or
+hosted-backend restart is part of this naming update.
 
-Some clients format the registration key instead of honoring MCP
-`serverInfo.title`. If the updated client still shows "Servicenow Portable",
-keep the connection and use only a host-supported label change that preserves
-bindings and approvals. The Agent Plugins 1.0 MCP manifest has no display-name
-field. Do not edit host databases or recreate approval state to change the label.
-Check both Customize and a fresh tool invocation.
+1. Finish in-flight operations before updating. Preserve original operation
+   IDs and resolve uncertain outcomes without replay.
+2. Select **Update plugin** on the existing installation. Do not uninstall it
+   or add another MCP server. If files are in use, release the affected sessions
+   through the app's supported controls after their work has finished.
+3. Use a fresh session to load the updated registration. Check that Customize
+   has one enabled plugin-provided server named `ServiceNow`, not both keys.
+4. Review any new server trust or tool-approval prompts in the app. Do not assume
+   permissions and rules keyed to `servicenow-portable` apply to `ServiceNow`.
+   Review their replacements rather than copying approval records or broadening
+   access.
+5. Make the [first read-only request](#4-make-a-first-request). Verify that the
+   new invocation's provider prefix is exactly **ServiceNow** and its source
+   links point to your instance. A manifest or handshake check alone does not
+   establish this result.
+
+If a fresh invocation still shows the old label, wrong capitalization or
+duplicate registrations, stop the naming rollout and report the app version
+and observed label. Use supported connection/session refresh controls, not
+private host database or cache edits. Do not declare the naming fix complete
+until an actual updated invocation has the required prefix.
 
 Updating the plugin does not update a separately hosted Cowork backend. If they
 share an operation-history directory, follow the
 [shared-policy upgrade requirements](OPERATIONS.md#native-account-and-managed-access-contracts)
-before installing new account-policy fields.
+before installing new account-policy fields. Changing the registration does
+not change those policies or the Cowork tool contract.
 
 ### If the connection fails
 

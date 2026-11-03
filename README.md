@@ -18,11 +18,10 @@ the direct stdio path for clients with protected environment configuration.
 For Cowork, an administrator must supply a matching OAuth connector and
 [host the authenticated backend](docs/COWORK.md).
 
-To update an installed Copilot plugin, select **Update plugin** and start a new chat.
-The MCP display title is **ServiceNow**; the legacy registration identifier is
-preserved so updates do not replace bindings or approvals. See
-[client naming compatibility](docs/SETUP.md#update-an-installed-plugin) if your
-host still displays the old identifier.
+The plugin registers its MCP server as **ServiceNow**. Updating from 1.x changes
+the server identifier while retaining the plugin identity and saved connection.
+Follow the [update steps](docs/SETUP.md#update-an-installed-plugin) to review any
+new server approvals and verify the name on an actual tool invocation.
 
 ## Try it
 
