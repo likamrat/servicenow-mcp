@@ -263,10 +263,11 @@ distinguish completed work, cancellation, blocked users and unattempted targets.
 This confirms job settlement, not that every account changed. Failed or uncertain
 source operations retain their original holds and prevent a safe restart.
 
-Table API errors include `diagnostic.request.method` and `table`. Deletion
-impact errors also include an `assessment_stage`, such as `role_grants` or
-`cascade_relationship`. These fields identify the requested read without adding
-headers, query strings, record values or response bodies to the diagnostic.
+Validated Table API request failures include `diagnostic.request.method` and
+`diagnostic.request.table`. Deletion-impact read failures also include
+`diagnostic.assessment_stage`, such as `role_grants` or `cascade_relationship`.
+These fields identify the failed request without adding headers, query strings,
+record values or response bodies to the diagnostic.
 The existing sanitized source error remains intact. No source correlation ID
 is invented. Both bulk status paths retain this diagnostic in their existing
 job or target error; older receipts remain unchanged.
