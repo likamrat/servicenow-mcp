@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const ID = /^[a-f0-9]{32}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+const NAME = /^[a-zA-Z][a-zA-Z0-9_]{0,127}$/;
 const deletesReference = rule => ["delete", "delete_no_workflow", "cascade"].includes(rule);
 const effects = ["primary-device-cascade-and-parent-hook", "exact-user-profile/channel/filter/preference-cleanup",
   "exact-user-session-invalidation", "native-reference-delete-clear-retain-or-restrict",
@@ -8,7 +9,7 @@ const effects = ["primary-device-cascade-and-parent-hook", "exact-user-profile/c
 const id = { type: "string", pattern: ID.source };
 const tools = [
   { name: "local_admin_user_delete_assess", annotations: { readOnlyHint: true },
-    description: "Read administrative deletion impact for one supplied user ID. Active/status/contact/provider/ordinary role/group/business links are not universal DELETE denials. Protects current operator, retained/configured identities, built-in system accounts and administrative/elevated role closure, including observed user cascades. Follows ordered native pages for known target-scoped relationships and root delete rules; returns versions, cascade metadata and an impact hash. Unreadable/omitted/inconsistent evidence stops assessment; hidden/dynamic effects remain unknown. No mutation or approval.",
+    description: "Read administrative deletion impact for one supplied user ID. Active/status/contact/provider/ordinary role/group/business links are not universal DELETE denials. Protects current operator, retained/configured identities, built-in system accounts and administrative/elevated role closure, including observed user cascades. Pages known relationships and dictionary-declared reference cascades recursively, including dependent business records; returns versions, cascade metadata and an impact hash. Unreadable, unsupported, oversized or inconsistent evidence stops assessment; hidden/dynamic/inherited effects remain unknown. No mutation or approval.",
     inputSchema: { type: "object", properties: { sys_id: id }, required: ["sys_id"], additionalProperties: false } },
   { name: "local_admin_user_delete_administrative", annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     description: "Delete one explicitly authorized supplied user through native sys_user DELETE after exact identity/version/impact recheck. No fixture, profile-cohort, inactive/locked, blank-email or no-ordinary-role/group/business prerequisite. Never deletes current operator, protected administrator/system identities or overrides retention. Acknowledge disclosed native effects; source ACLs/rules/hooks govern deletion. No role removal, reassignment, child deletion or forced policy change. Parent absence is separate from known related effects and unknown cleanup; response loss stays uncertain. Shared runtime serialization required; no replay after ambiguity.",
@@ -85,7 +86,7 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
       protected: roles.some(role => role.elevated_privilege === "true" || role.scoped_admin === "true" ||
         /(?:^|[_.])(admin|security_admin|maint|impersonator|role_delegator)(?:$|[_.])/i.test(role.name)) };
   }
-  async function relation(table, field, target, operator = "=") {
+  async function relation(table, field, target, operator = "=", declared) {
     const matches = value => typeof value === "string" && (operator === "LIKE" ? value.split(",").includes(target) : value === target);
     const records = await allRows(table, `${field}${operator}${target}`, `sys_id,sys_mod_count,${field}`, {
       allowEmptyChildVersion: true,
@@ -93,11 +94,61 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
         if (!matches(record[field])) throw new Error("Administrative impact relationship identity/version mismatch:" + table + "." + field);
       },
     });
-    const metadata = records.length ? await rows("sys_dictionary", `name=${table}^element=${field}`,
+    const metadata = declared ? [declared] : records.length ? await rows("sys_dictionary", `name=${table}^element=${field}`,
       "sys_id,sys_mod_count,reference_cascade_rule", 2) : [];
+    if (metadata.length > 1) throw new Error("Ambiguous native reference cascade metadata:" + table + "." + field);
     return { table, field, target, operator, records: records.sort((a, b) => a.sys_id.localeCompare(b.sys_id)),
       cascade_rule: metadata[0]?.reference_cascade_rule || "unspecified",
       dictionary: metadata[0] || null };
+  }
+  async function discoverCascades(impact) {
+    const definitions = new Map(), visited = new Map();
+    const queue = [{ table: "sys_user", sys_id: impact.target.sys_id, depth: 0 }];
+    while (queue.length) {
+      const current = queue.shift();
+      const key = current.table + ":" + current.sys_id;
+      if (visited.has(key)) continue;
+      if (visited.size >= 5000 || current.depth > 8)
+        throw new Error("Native cascade graph exceeds bounded review; no deletion permitted.");
+      visited.set(key, current);
+      if (!definitions.has(current.table)) {
+        const found = await allRows("sys_dictionary",
+          `reference=${current.table}^reference_cascade_ruleINdelete,delete_no_workflow,cascade`,
+          "sys_id,sys_mod_count,name,element,reference,reference_cascade_rule,internal_type", {
+            checkRecord: row => {
+              if (!NAME.test(row.name) || !NAME.test(row.element) || row.reference !== current.table ||
+                  !deletesReference(row.reference_cascade_rule) || !["reference", "glide_list"].includes(row.internal_type))
+                throw new Error("Unsupported or incomplete native cascade reference metadata.");
+            },
+          });
+        if (found.length > 1000 || new Set(found.map(row => row.name + "." + row.element)).size !== found.length)
+          throw new Error("Oversized or ambiguous native cascade reference metadata.");
+        definitions.set(current.table, found);
+      }
+      for (const definition of definitions.get(current.table)) {
+        const rel = await relation(definition.name, definition.element, current.sys_id,
+          definition.internal_type === "glide_list" ? "LIKE" : "=", definition);
+        const existing = impact.relationships.findIndex(row => row.table === rel.table && row.field === rel.field &&
+          row.target === rel.target && row.operator === rel.operator);
+        if (existing >= 0) impact.relationships[existing] = rel;
+        else if (rel.records.length) impact.relationships.push(rel);
+      }
+      for (const rel of impact.relationships.filter(row => row.target === current.sys_id && deletesReference(row.cascade_rule))) {
+        for (const record of rel.records) {
+          if (record.sys_id === impact.operator_sys_id) impact.blocked.push("native_cascade_to_current_operator");
+          if (retainedIds.includes(record.sys_id)) impact.blocked.push("native_cascade_conflicts_with_user_retention_hold");
+          if (protectedIds.includes(record.sys_id)) impact.blocked.push("native_cascade_to_protected_identity");
+          queue.push({ table: rel.table, sys_id: record.sys_id, depth: current.depth + 1 });
+          if (queue.length + visited.size > 10000)
+            throw new Error("Native cascade graph exceeds bounded review; no deletion permitted.");
+        }
+      }
+    }
+    impact.cascade_discovery = {
+      metadata: [...definitions].map(([table, fields]) => ({ table, fields })),
+      visited_records: [...visited.values()],
+      coverage: "Read-visible explicit dictionary reference/glide-list delete cascades, recursively bounded to8 edges and5000 unique records. Does not enumerate hidden, inherited-reference, dynamic-document or script-only effects.",
+    };
   }
   async function assess(args) {
     if (!args || typeof args !== "object" || Array.isArray(args) || Object.keys(args).length !== 1 || !Object.hasOwn(args, "sys_id") ||
@@ -118,7 +169,7 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
       ...(blocked.includes("explicit_user_retention_hold") ? { retention_conflict: { sys_id: target.sys_id,
         source: "trusted runtime retainedIds", resolution: "Resolve the exact prior user retention hold with the coordinator; not a source ACL and not caller-overridable." } } : {}),
       native_effects_declared: [...effects],
-      coverage: "Known target-scoped read-visible user/device relationships and root sys_user delete rules collected through ordered pages until an empty page. Empty related sys_mod_count is preserved literally as unversioned evidence, never normalized to0. Not hidden/inherited/dynamic references, a source snapshot or atomic CAS, effective DELETE permission, or independently verified session/notification effects." };
+      coverage: "Known target-scoped read-visible user/device relationships, recursive explicit dictionary delete cascades and root sys_user delete rules collected through ordered pages until an empty page. Empty related sys_mod_count is preserved literally as unversioned evidence, never normalized to0. Not hidden/inherited/dynamic references, a source snapshot or atomic CAS, effective DELETE permission, or independently verified session/notification effects." };
     if (!blocked.length) {
       impact.administrator_evidence = await administratorEvidence(target.sys_id);
       if (impact.administrator_evidence.protected) blocked.push("protected_administrator_role");
@@ -141,6 +192,7 @@ function createAdministrativeImpact({ rows, principal, retainedIds, references, 
         ["pwd_device", "device", "="], ["sys_notif_subscription", "devices", "LIKE"],
         ["cmn_notif_device_variable", "device", "="], ["cmn_notif_message", "device", "="],
       ]) impact.relationships.push(await relation(table, field, device.sys_id, op));
+      await discoverCascades(impact);
       const cascadingUsers = impact.relationships.filter(r => r.table === "sys_user" && deletesReference(r.cascade_rule))
         .flatMap(r => r.records.map(record => record.sys_id));
       if (cascadingUsers.includes(operator.sys_id)) blocked.push("native_cascade_to_current_operator");

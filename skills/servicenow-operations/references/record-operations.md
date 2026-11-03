@@ -109,6 +109,19 @@ ID. Inspect target/status/identity markers, current operator, retention holds,
 relationship identities/versions, native effects, rule versions and coverage.
 Assessment is not approval or effective source permission.
 
+For an authorized set, prefer the native bulk tools when available instead of
+an agent-side loop of individual deletes. Submit exact IDs/logins and preservation
+IDs to `local_admin_user_delete_batch_assess`; review its completed plan, all
+dependency summaries and any material native effects. Explicit dictionary
+cascades can include business records and their own dependents. Do not treat
+deleting a user as permission to override an existing business-record hold.
+Execute with `local_admin_user_delete_batch` and the reviewed plan hash, then
+read `local_admin_user_delete_batch_status` for per-user outcomes. It runs targets
+sequentially inside the MCP and stops on uncertainty. Use
+`local_admin_user_delete_batch_cancel` to request a stop between operations.
+Keep the MCP process alive and preserve its original batch/user operation IDs;
+interrupted jobs must not be replayed.
+
 Read all required impact pages according to the tool's contract. A page size
 is not a total eligibility cap. Hidden/dynamic relationships, unreadable or
 non-progressing pages, and partial inventories remain unknown. Pagination

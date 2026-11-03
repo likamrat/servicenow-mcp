@@ -133,6 +133,7 @@ These operations are available through local stdio, not the Cowork connector.
 | Account qualification | `inspect_user_account_policy`; inspect missing/matching/drifted private policy, inherited schema, source-rule content/templates and native uniqueness without approving a contract or writing an account. |
 | Account lifecycle | `local_admin_user_assess`, `local_admin_user_create_disabled`, `local_admin_user_update_profile`, `local_admin_user_activate`, `local_admin_user_deactivate_and_lock`, `local_admin_user_lock`, `local_admin_user_unlock`. Reviewed account policy and eligible local-human identities required. Existing access needs explicit coverage through current governed access policies, not fixture ownership. |
 | Administrative deletion | `local_admin_user_delete_assess`, `local_admin_user_delete_administrative`; current impact/version guards and native-effect acknowledgments, with operator/retention/system/administrator protection. |
+| Bulk user deletion | `local_admin_user_delete_batch_assess`, `local_admin_user_delete_batch`, `local_admin_user_delete_batch_status`, `local_admin_user_delete_batch_cancel`; up to 1,000 exact IDs/logins, a reviewed plan hash, server-side sequential execution and per-user receipts. |
 | Managed groups/roles | `local_admin_access_read` and group/role create/update, group deletion, direct membership/role add/remove tools. Requires account/access policies and installation-owned definition receipts. Namespaced nonprivileged scope and disabled/locked-user guards apply. Role deletion is assessment-only. |
 | Login illustration | `local_admin_set_branding_property`; only the existing `glide.ui.polaris.login.show_illustrations` string property. |
 | Draft colors/radius | `local_admin_patch_theme_style_pair`, `local_admin_restore_theme_style_pair`; a global unpublished draft owned by the configured source account, with two exclusive core styles and current version/hash guards. Paired writes are not atomic; complete originals are retained. |
@@ -154,10 +155,25 @@ receipt rather than an implicit grant.
 
 Deletion impact reads paginate beyond 100 related records. Required target/rule
 versions remain strict; optional blank relationship versions stay blank, not
-zero. Unreadable/inconsistent evidence blocks assessment. Known relationships
-are not a complete hidden-cascade graph or proof of session revocation.
+zero. Assessment also discovers explicit dictionary delete cascades, including
+expense lines and entitlements, and follows their dependent records. It reads
+only identities, versions and reference fields. Unsupported or unreadable
+metadata, inconsistent pages or a cascade graph exceeding eight edges or 5,000
+unique records stop assessment. Hidden, inherited-reference, dynamic-document
+and script-only effects remain outside that graph; session revocation is not
+independently verified.
 Lost source responses remain uncertain even when later requested fields or
 parent absence are observed; no same-ID or new-ID replay is permitted.
+
+Bulk assessment and execution return immediately with a batch ID. Status provides
+complete counts and paginated per-user results; full saved evidence is available
+for up to ten users per page. Review dependency counts and native effects before
+executing the completed plan. The job preserves integration/nonhuman identities,
+explicit preservation IDs and users with known user-to-user cascades. It checks
+each eligible target again before deletion, retains drifted targets and stops on
+source failure or uncertainty. ServiceNow performs the native cascades; the MCP
+does not issue child deletes. `completed` means the supplied set was processed,
+not that every user was deleted. Inspect the per-user outcomes.
 
 The tool set does not include password changes, adoption of existing definitions
 into the managed-definition store, role-definition deletion, SVG/JPEG or font

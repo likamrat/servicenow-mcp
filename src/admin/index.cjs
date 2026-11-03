@@ -7,6 +7,7 @@ const { createUsers } = require("./users.cjs");
 const { createUserAccess } = require("./user-access.cjs");
 const { createReads } = require("../reads.cjs");
 const { createDeletion } = require("./deletion.cjs");
+const { createUserDeleteBatch } = require("./user-delete-batch.cjs");
 const { tools: styleTools, createThemeStyleOperations } = require("./theme-style.cjs");
 const { createLogoRestoreOperations } = require("./logo-restore.cjs");
 const { validate } = require("./validate.cjs");
@@ -50,6 +51,7 @@ function createAdmin(config) {
   const reads = createReads(source);
   const incidents = createIncidents({ source, state, records });
   const deletion = createDeletion({ source, state, principal: config.username });
+  const userDeleteBatch = createUserDeleteBatch({ source, state, deletion, principal: config.username });
   const users = createUsers({ source, state, records, incidents, principal: config.username });
   const userAccess = createUserAccess({ source, state, records, principal: config.username });
   const accountPolicy = createAccountPolicyInspection({ source, records, directory: state.directory });
@@ -59,7 +61,7 @@ function createAdmin(config) {
   const conditional = [...accountTools.filter(tool => tool.name !== "local_admin_user_get"), ...importTools,
     ...accessTools.filter(tool => accessNames.has(tool.name)), ...definitionTools.filter(tool => definitionNames.has(tool.name))]
     .map(tool => ({ ...tool, description: "Requires an operator-reviewed source contract; unavailable until configured. Writes reject contract drift. " + tool.description }));
-  const tools = [...reads.tools, ...records.tools, ...incidents.tools, ...users.tools, ...userAccess.tools, ...accountPolicy.tools, ...deletion.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
+  const tools = [...reads.tools, ...records.tools, ...incidents.tools, ...users.tools, ...userAccess.tools, ...accountPolicy.tools, ...deletion.tools, ...userDeleteBatch.tools, ...styleTools, ...logos.tools, ...extraTools, ...conditional];
   const routes = new Map([
     ...records.tools.map(tool => [tool.name, records.handle]),
     ...deletion.tools.map(tool => [tool.name, deletion.handle]),
@@ -101,61 +103,68 @@ function createAdmin(config) {
     if (!tool) throw new Error("Operation not available in this ServiceNow build; consult its capability prerequisites.");
     if (reads.tools.some(item => item.name === name)) return reads.handle(name, args);
     validate(tool.inputSchema, args);
-    return state.run(async () => {
-      if (!tool.annotations.readOnlyHint && state.isAttempted(args.operation_id)) throw new Error("Operation UUID already attempted; no replay.");
-      if (!tool.annotations.readOnlyHint) assertResourceClear(state.directory, args);
-      if (!tool.annotations.readOnlyHint && args.user &&
-          (state.unresolved("sys_user") || state.unresolved("sys_user", args.user)))
-        throw new Error("User has an unresolved operation; no cross-path access replay.");
-      if (incidents.tools.some(item => item.name === name)) return incidents.handle(name, args, callerKey);
-      if (users.tools.some(item => item.name === name)) return users.handle(name, args, callerKey);
-      if (userAccess.tools.some(item => item.name === name)) return userAccess.handle(name, args, callerKey);
-      if (name === "inspect_user_account_policy") return accountPolicy.inspect();
-      if (name === "local_admin_patch_theme_style_pair" && state.pendingTheme(args.theme_id))
-        throw new Error("Earlier theme operation unresolved; reconcile or use its guarded restoration, not a new patch UUID.");
-      if (routes.has(name)) {
-        const result = await routes.get(name)(name, args);
-        if (name === "local_admin_restore_theme_style_pair" && result.status === "confirmed")
-          state.record({ operation_id: args.snapshot_id, status: "resolved_by_restore", restoration_operation_id: args.operation_id });
-        return result;
-      }
-      if (accountTools.some(tool => tool.name === name) && name !== "local_admin_user_get") {
-        if (!tool.annotations.readOnlyHint && state.unresolved("sys_user", args.sys_id))
-          throw new Error("Earlier account/deletion outcome unresolved; no new UUID replay.");
-        const policy = reviewedContract("account", state.directory, instance);
-        const protectedUsers = protectedAccounts(state.directory, instance);
-        policy.protectedIds = [...new Set([...protectedUsers.protectedIds, ...state.retainedIds()])];
-        policy.protectedNames = protectedUsers.protectedNames;
-        return createUserAccountOperations({ ...dependencies, policy,
-          checkSourcePolicy: accountPolicy.check, reviewExistingAccess: userAccess.reviewExisting }).handle(name, args);
-      }
-      if (accessNames.has(name) || definitionNames.has(name)) {
-        const policy = reviewedContract("account", state.directory, instance);
-        policy.protectedIds = [...new Set([...policy.protectedIds, ...state.retainedIds()])];
-        policy.protectedNames = [...new Set([...policy.protectedNames, "admin", "guest", "system"])];
-        const accessPolicy = reviewedContract("access", state.directory, instance);
-        const access = createAccessOperations({ ...dependencies, policy, accessPolicy,
-          assessRolePickerImpact: name => definitions.assessRolePickerImpact(name) });
-        const definitions = createDefinitionOperations({ ...dependencies, access });
-        return (accessNames.has(name) ? access : definitions).handle(name, args);
-      }
-      if (importTools.some(tool => tool.name === name)) {
-        const qualified = reviewedContract("image", state.directory, instance);
-        return createLogoImportOperations({ ...dependencies,
-          staging: createLogoStaging(path.join(state.directory, "staged-logos")), guards: logos.guards,
-          checkPolicy: createLogoImportPolicy({ discover: records.discover, list: source.list, qualified }),
-        }).handle(name, args);
-      }
-      if (name === "local_operation_status") return state.status(args.operation_id);
-      if (name === "local_admin_set_branding_property") return branding(args);
-      const rows = await source.list("sys_user", `sys_id=${args.sys_id}`, userFields.join(","), 2);
-      if (rows.length > 1 || rows.length && (rows[0].sys_id !== args.sys_id || userFields.some(field => !Object.hasOwn(rows[0], field))))
-        throw new Error("Exact user identity or selected fields unavailable.");
-      return { found: Boolean(rows.length), record: rows.length ? {
-        ...Object.fromEntries(userFields.map(field => [field, rows[0][field]])),
-        source_url: `${instance}/sys_user.do?sys_id=${args.sys_id}`,
-      } : null };
-    });
+    if (userDeleteBatch.tools.some(item => item.name === name)) return userDeleteBatch.handle(name, args, callerKey);
+    return state.run(() => runOperation(name, args, callerKey));
+  }
+  // Batch actions already own state.run; dispatch without re-entering its queue.
+  async function runOperation(name, args, callerKey) {
+    const tool = tools.find(item => item.name === name);
+    if (!tool || userDeleteBatch.tools.some(item => item.name === name))
+      throw new Error("A user batch cannot dispatch another bulk operation.");
+    validate(tool.inputSchema, args);
+    if (!tool.annotations.readOnlyHint && state.isAttempted(args.operation_id)) throw new Error("Operation UUID already attempted; no replay.");
+    if (!tool.annotations.readOnlyHint) assertResourceClear(state.directory, args);
+    if (!tool.annotations.readOnlyHint && args.user &&
+        (state.unresolved("sys_user") || state.unresolved("sys_user", args.user)))
+      throw new Error("User has an unresolved operation; no cross-path access replay.");
+    if (incidents.tools.some(item => item.name === name)) return incidents.handle(name, args, callerKey);
+    if (users.tools.some(item => item.name === name)) return users.handle(name, args, callerKey);
+    if (userAccess.tools.some(item => item.name === name)) return userAccess.handle(name, args, callerKey);
+    if (name === "inspect_user_account_policy") return accountPolicy.inspect();
+    if (name === "local_admin_patch_theme_style_pair" && state.pendingTheme(args.theme_id))
+      throw new Error("Earlier theme operation unresolved; reconcile or use its guarded restoration, not a new patch UUID.");
+    if (routes.has(name)) {
+      const result = await routes.get(name)(name, args);
+      if (name === "local_admin_restore_theme_style_pair" && result.status === "confirmed")
+        state.record({ operation_id: args.snapshot_id, status: "resolved_by_restore", restoration_operation_id: args.operation_id });
+      return result;
+    }
+    if (accountTools.some(tool => tool.name === name) && name !== "local_admin_user_get") {
+      if (!tool.annotations.readOnlyHint && state.unresolved("sys_user", args.sys_id))
+        throw new Error("Earlier account/deletion outcome unresolved; no new UUID replay.");
+      const policy = reviewedContract("account", state.directory, instance);
+      const protectedUsers = protectedAccounts(state.directory, instance);
+      policy.protectedIds = [...new Set([...protectedUsers.protectedIds, ...state.retainedIds()])];
+      policy.protectedNames = protectedUsers.protectedNames;
+      return createUserAccountOperations({ ...dependencies, policy,
+        checkSourcePolicy: accountPolicy.check, reviewExistingAccess: userAccess.reviewExisting }).handle(name, args);
+    }
+    if (accessNames.has(name) || definitionNames.has(name)) {
+      const policy = reviewedContract("account", state.directory, instance);
+      policy.protectedIds = [...new Set([...policy.protectedIds, ...state.retainedIds()])];
+      policy.protectedNames = [...new Set([...policy.protectedNames, "admin", "guest", "system"])];
+      const accessPolicy = reviewedContract("access", state.directory, instance);
+      const access = createAccessOperations({ ...dependencies, policy, accessPolicy,
+        assessRolePickerImpact: name => definitions.assessRolePickerImpact(name) });
+      const definitions = createDefinitionOperations({ ...dependencies, access });
+      return (accessNames.has(name) ? access : definitions).handle(name, args);
+    }
+    if (importTools.some(tool => tool.name === name)) {
+      const qualified = reviewedContract("image", state.directory, instance);
+      return createLogoImportOperations({ ...dependencies,
+        staging: createLogoStaging(path.join(state.directory, "staged-logos")), guards: logos.guards,
+        checkPolicy: createLogoImportPolicy({ discover: records.discover, list: source.list, qualified }),
+      }).handle(name, args);
+    }
+    if (name === "local_operation_status") return state.status(args.operation_id);
+    if (name === "local_admin_set_branding_property") return branding(args);
+    const rows = await source.list("sys_user", `sys_id=${args.sys_id}`, userFields.join(","), 2);
+    if (rows.length > 1 || rows.length && (rows[0].sys_id !== args.sys_id || userFields.some(field => !Object.hasOwn(rows[0], field))))
+      throw new Error("Exact user identity or selected fields unavailable.");
+    return { found: Boolean(rows.length), record: rows.length ? {
+      ...Object.fromEntries(userFields.map(field => [field, rows[0][field]])),
+      source_url: `${instance}/sys_user.do?sys_id=${args.sys_id}`,
+    } : null };
   }
   return { tools, handle };
 }

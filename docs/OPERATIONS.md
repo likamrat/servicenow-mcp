@@ -254,6 +254,7 @@ keep its original operation ID and inspect it read-only:
 | User profiles/deletion | `get_user_operation` |
 | Reviewed access | `get_user_access_operation` |
 | Native administration | `local_operation_status` |
+| Bulk user deletion | `local_admin_user_delete_batch_status`; use each saved user operation ID with `local_operation_status` for its journal entries. |
 
 Do not resend with the same or a new ID, switch callers to bypass a hold, or
 automatically roll back. Preserve the original error, returned identities and
@@ -278,3 +279,33 @@ Before a controlled restart, stop incoming work from all clients and wait for
 in-flight state operations. Forced termination can leave the lock behind;
 startup does not remove it. The four bounded ticket reads do not acquire that
 lock, so a successful search does not establish write/recovery readiness.
+
+### Bulk user deletion
+
+Submit the authorized IDs and exact logins to
+`local_admin_user_delete_batch_assess`, with a new batch UUID and
+`preserve_user_ids` for accounts that must remain. Read status until assessment
+finishes, then review the complete counts, dependency summaries and affected
+records. A ServiceNow cascade warning can include business records such as
+expense lines; a user-cleanup request does not override a prohibition on those
+effects. Resolve material scope conflicts before execution.
+
+Pass the completed plan hash, a new operation UUID and the declared native-effect
+acknowledgments to `local_admin_user_delete_batch`. The job runs inside the
+installed MCP process under the shared operation lock. Keep that process running;
+updates, restarts and forced termination can interrupt the job. Status and
+cancellation remain available without waiting for that lock. Cancellation waits
+for the current source operation to finish and stops before another target.
+
+The private `user-delete-batches` directory retains caller-bound plans, progress,
+full per-user evidence and stop requests. Preserve it with the existing journal.
+Jobs never restart automatically. Status read from another process reports
+`another_process_or_interrupted_do_not_replay`, which does not establish that the
+owner is dead. Reconcile the owner, original user operation IDs and source effects
+before resolving an interrupted lock. Do not resubmit attempted or uncertain
+targets in a new batch.
+
+The lock does not cover UI users or other ServiceNow clients. Refresh the target
+inventory after their changes, and keep externally deleted accounts separate from
+MCP-confirmed deletions. Reassess unattempted drifted targets rather than forcing
+the old plan.
