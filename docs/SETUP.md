@@ -111,14 +111,16 @@ Do not add a second server or rename the key to change its label: client
 approvals may be tied to that key.
 
 Some clients format the registration key instead of honoring MCP
-`serverInfo.title`. If your updated client still shows "Servicenow Portable",
-the server handshake alone is **not** a verified UI fix. Use only a
-host-supported display-name override that preserves the registration, or a
-host-supported migration that retains bindings and approvals. The Agent Plugins
-1.0 MCP manifest has no display-name/alias field; adding an invented property
-does not solve this. Never edit private host databases or silently recreate
-approval state. Keep the existing connection until the host supports that
-display correction, and verify both Customize and a fresh tool invocation.
+`serverInfo.title`. If the updated client still shows "Servicenow Portable",
+keep the connection and use only a host-supported label change that preserves
+bindings and approvals. The Agent Plugins 1.0 MCP manifest has no display-name
+field. Do not edit host databases or recreate approval state to change the label.
+Check both Customize and a fresh tool invocation.
+
+Updating the plugin does not update a separately hosted Cowork backend. If they
+share an operation-history directory, follow the
+[shared-policy upgrade requirements](OPERATIONS.md#native-account-and-managed-access-contracts)
+before installing new account-policy fields.
 
 ### If the connection fails
 

@@ -14,7 +14,7 @@ function fixture(t) {
     active: "true", locked_out: "false", notification: "2", sys_class_name: "sys_user", identity_type: "human",
     internal_integration_user: "false", web_service_access_only: "false", sys_mod_count: "4",
     user_password: "PRIVATE_PASSWORD_MUST_NOT_RETURN" };
-  let present = true, deny = false, writes = 0;
+  let present = true, deny = false, loseResponse = false, writes = 0;
   const children = Array.from({ length: 101 }, (_, index) => ({
     sys_id: (index + 1).toString(16).padStart(32, "0"), sys_mod_count: "", user: id,
   }));
@@ -27,6 +27,7 @@ function fixture(t) {
       writes++;
       if (deny) return Response.json({ error: { message: "ACL denied" } }, { status: 403 });
       present = false;
+      if (loseResponse) throw new Error("Synthetic response loss after native deletion");
       return new Response(null, { status: 204 });
     }
     let rows = [];
@@ -47,7 +48,8 @@ function fixture(t) {
       rows = [{ sys_id: "c".repeat(32), sys_mod_count: "0", reference_cascade_rule: "cascade" }];
     return Response.json({ result: rows });
   };
-  return { directory, id, operator, user, children, roles, definitions, deny: () => { deny = true; }, writes: () => writes,
+  return { directory, id, operator, user, children, roles, definitions, deny: () => { deny = true; },
+    loseResponse: () => { loseResponse = true; }, writes: () => writes,
     admin: createAdmin({ instance: "https://service.example.invalid", username: "operator", password: "synthetic-only", directory, fetchImpl }) };
 }
 test("administrative deletion pages beyond100, preserves blank child versions and confirms parent separately", async (t) => {
@@ -111,6 +113,27 @@ test("source denial retains uncertainty and blocks a different-UUID deletion rep
     operation_id: randomUUID(), confirm: true, acknowledged_native_effects: impact.native_effects_declared };
   await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", args), error => error.outcome.status === "uncertain");
   await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", { ...args, operation_id: randomUUID() }), /unresolved/);
+  assert.equal(f.writes(), 1);
+});
+
+test("lost deletion response remains uncertain despite parent absence and observed native cascades", async t => {
+  const f = fixture(t);
+  const impact = await f.admin.handle("local_admin_user_delete_assess", { sys_id: f.id });
+  f.loseResponse();
+  const args = { sys_id: f.id, expected_mod_count: "4", expected_impact_sha256: impact.impact_sha256,
+    operation_id: randomUUID(), confirm: true, acknowledged_native_effects: impact.native_effects_declared };
+  await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", args), error => {
+    assert.equal(error.outcome.status, "uncertain");
+    assert.equal(error.outcome.parent_absent, true);
+    assert.equal(error.outcome.cleanup_complete, false);
+    assert.equal(error.outcome.native_observations.length, 101);
+    assert.ok(error.outcome.native_observations.every(row => row.outcome === "deleted"));
+    return true;
+  });
+  await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", args), /already attempted/);
+  await assert.rejects(f.admin.handle("local_admin_user_delete_administrative", {
+    ...args, operation_id: randomUUID(),
+  }), /unresolved/);
   assert.equal(f.writes(), 1);
 });
 

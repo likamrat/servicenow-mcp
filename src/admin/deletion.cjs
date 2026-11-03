@@ -25,6 +25,8 @@ function createDeletion({ source, state, principal }) {
     return found.map(row => Object.fromEntries(fields.split(",").map(field => [field, row[field]])));
   }
   async function handle(name, args) {
+    if (name !== "local_admin_user_delete_assess" && state.unresolved("sys_user", args.sys_id))
+      throw new Error("Earlier user outcome unresolved; no new UUID replay.");
     const impact = createAdministrativeImpact({ rows, principal, retainedIds: state.retainedIds(), references,
       ...protectedAccounts(state.directory, source.instance) });
     const before = await impact.assess({ sys_id: args.sys_id });
@@ -32,7 +34,6 @@ function createDeletion({ source, state, principal }) {
     if (before.blocked.length) throw new Error("Administrative deletion blocked:" + before.blocked.join(","));
     if (before.target.sys_mod_count !== args.expected_mod_count || before.impact_sha256 !== args.expected_impact_sha256)
       throw new Error("Target/version/impact changed; reassess before deletion.");
-    if (state.unresolved("sys_user", args.sys_id)) throw new Error("Earlier user outcome unresolved; no new UUID replay.");
     const meta = { action: name, operation_id: args.operation_id, table: "sys_user", sys_id: args.sys_id };
     const outcome = { ...meta, status: "attempt", impact_before: before, native_effects_declared: effects,
       cleanup_complete: false, parent_absent: false, native_observations: [] };

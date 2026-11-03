@@ -173,6 +173,12 @@ they are not silently upgraded. Inspection never writes or approves a contract.
 Do not copy a fixture contract, approve an unread rule, substitute a discovery
 hash for review evidence, or automatically refresh after drift.
 
+Before adding these optional fields to a shared state directory, verify that
+every runtime using it supports them. Older runtimes reject unknown contract
+fields. Update those runtimes through their existing deployment controls before
+installing the reviewed contract; preserve the directory, journals and bindings.
+Do not strip reviewed fields or copy state to bypass an incompatible runtime.
+
 Review create-time notification-device/identity-hash effects; profile/device
 synchronization; locked-account session/OAuth revocation; provider unlinking;
 contextual group changes on activation/deactivation; unlock's failed-attempt
