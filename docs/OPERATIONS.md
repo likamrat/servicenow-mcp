@@ -255,6 +255,13 @@ keep its original operation ID and inspect it read-only:
 | Reviewed access | `get_user_access_operation` |
 | Native administration | `local_operation_status` |
 | Bulk user deletion | `local_admin_user_delete_batch_status`; use each saved user operation ID with `local_operation_status` for its journal entries. |
+| Bulk user creation | `get_user_bulk_create`; preserves per-target create/profile/activate/unlock receipts. See [bulk creation](BULK-USER-CREATION.md). |
+
+A bulk job's parent journal entry is `confirmed` when execution or requested
+cancellation finishes safely. Its `batch_phase` and per-target counts still
+distinguish completed work, cancellation, blocked users and unattempted targets.
+This confirms job settlement, not that every account changed. Failed or uncertain
+source operations retain their original holds and prevent a safe restart.
 
 Do not resend with the same or a new ID, switch callers to bypass a hold, or
 automatically roll back. Preserve the original error, returned identities and

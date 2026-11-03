@@ -119,6 +119,11 @@ test("native bulk deletion reviews a complete supplied set and preserves per-use
   });
   assert.equal(evidence.items[0].evidence.outcome.status, "confirmed");
   assert.equal(evidence.items[0].evidence.outcome.impact_before.target.sys_mod_count, "4");
+  const journal = await f.admin.handle("local_operation_status", { operation_id: args.operation_id });
+  assert.equal(journal.entries.at(-1).status, "confirmed",
+    "A completed batch must not leave the existing restart guard with an unresolved parent attempt");
+  assert.equal(journal.entries.at(-1).batch_phase, "completed");
+  assert.deepEqual(journal.entries.at(-1).counts, { confirmed: 2, blocked: 1 });
   await assert.rejects(f.admin.handle("local_admin_user_delete_batch", args), /already|executed/);
   assert.equal(f.writes.length, 2);
 });
@@ -134,6 +139,8 @@ test("lost native response stops the whole batch and retains uncertainty without
   assert.equal(result.error.outcome.parent_absent, true);
   assert.equal(result.error.outcome.status, "uncertain");
   assert.equal(f.writes.length, 1);
+  const journal = await f.admin.handle("local_operation_status", { operation_id: args.operation_id });
+  assert.equal(journal.entries.at(-1).status, "stopped");
   await assert.rejects(f.admin.handle("local_admin_user_delete_batch", { ...args, operation_id: randomUUID() }), /already/);
   const fresh = createAdmin(f.config);
   assert.equal((await fresh.handle("local_admin_user_delete_batch_status", {
@@ -149,7 +156,8 @@ test("status and cancellation remain responsive while the source lock is held", 
   const gate = new Promise(resolve => { release = resolve; });
   const started = new Promise(resolve => { entered = resolve; });
   f.controls.beforeDelete = async () => { entered(); await gate; };
-  await f.admin.handle("local_admin_user_delete_batch", executeArgs(plan));
+  const args = executeArgs(plan);
+  await f.admin.handle("local_admin_user_delete_batch", args);
   await started;
   try {
     const status = await f.admin.handle("local_admin_user_delete_batch_status", {
@@ -170,6 +178,10 @@ test("status and cancellation remain responsive while the source lock is held", 
   const result = await settled(f.admin, plan.batch_id, ["cancelled"]);
   assert.deepEqual(result.counts, { confirmed: 1, blocked: 1, eligible: 1 });
   assert.equal(f.writes.length, 1);
+  const journal = await f.admin.handle("local_operation_status", { operation_id: args.operation_id });
+  assert.equal(journal.entries.at(-1).status, "confirmed");
+  assert.equal(journal.entries.at(-1).batch_phase, "cancelled");
+  assert.deepEqual(journal.entries.at(-1).counts, result.counts);
 });
 
 test("bulk plans bind exact logins, preservation IDs and source versions without weakening integration protections", async t => {

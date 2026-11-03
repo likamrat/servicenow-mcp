@@ -166,7 +166,7 @@ independently verified.
 Lost source responses remain uncertain even when later requested fields or
 parent absence are observed; no same-ID or new-ID replay is permitted.
 
-Bulk assessment and execution return immediately with a batch ID. Status provides
+Bulk deletion assessment and execution return immediately with a batch ID. Status provides
 complete counts and paginated per-user results; full saved evidence is available
 for up to ten users per page. Review dependency counts and native effects before
 executing the completed plan. The job preserves integration/nonhuman identities,

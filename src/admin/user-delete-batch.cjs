@@ -160,7 +160,8 @@ function createUserDeleteBatch({ source, state, deletion, principal }) {
         }
         if (batch.phase === "deleting") batch.phase = "completed";
         persist(batch);
-        state.record({ operation_id: batch.operation_id, batch_id: batch.batch_id, status: batch.phase,
+        state.record({ operation_id: batch.operation_id, batch_id: batch.batch_id,
+          status: ["completed", "cancelled"].includes(batch.phase) ? "confirmed" : batch.phase, batch_phase: batch.phase,
           cleanup_complete: false, counts: publicStatus(batch, { offset: 0, limit: 1 }).counts });
       } catch (error) {
         state.record({ operation_id: batch.operation_id, batch_id: batch.batch_id, status: "stopped",

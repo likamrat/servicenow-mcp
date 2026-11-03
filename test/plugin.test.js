@@ -112,6 +112,10 @@ Export-ModuleMember -Function Get-ServiceNowStoredCredential
   const advertised = responses[1].result.tools;
   for (const tool of require("../contracts/cowork-authenticated-tools.json").tools)
     assert.deepEqual(advertised.find(item => item.name === tool.name), tool, `Protected packaged entrypoint exposes ${tool.name}`);
+  for (const name of ["local_admin_user_delete_batch_assess", "local_admin_user_delete_batch",
+    "local_admin_user_delete_batch_status", "local_admin_user_delete_batch_cancel",
+    "assess_user_bulk_create", "start_user_bulk_create", "get_user_bulk_create", "cancel_user_bulk_create"])
+    assert.ok(advertised.some(tool => tool.name === name), `ServiceNow plugin exposes ${name}`);
   assert.deepEqual(JSON.parse(responses[2].result.content[0].text), []);
   assert.deepEqual(JSON.parse(responses[3].result.content[0].text).entries, [priorOperation]);
   assert.deepEqual(fs.readFileSync(file), originalBinding, "Loading the package must not replace the approved private binding");

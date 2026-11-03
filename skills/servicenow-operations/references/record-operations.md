@@ -97,6 +97,14 @@ evade guards. Business responsibilities can block lock/deactivation without
 being a universal activation/unlock prohibition. Unexpected access changes
 or a lost write response remain uncertain, even with matching source readback.
 
+For an authorized supplied roster, use `assess_user_bulk_create` when available,
+then inspect the complete `get_user_bulk_create` assessment before
+`start_user_bulk_create`. Bind existing accounts by exact ID, current version
+and preserved login; blank email does not mean absent. Request active/unlocked
+status only when authorized and qualified by the current account/access policies.
+Keep confirmed stage receipts if a later stage fails. Use
+`cancel_user_bulk_create` for a safe stop, never replay after uncertainty.
+
 Choose the supported deletion path for the requested account. A disposable
 cohort restriction belongs to that tool, not to all ServiceNow users. An
 administrative supplied-ID deletion path can have different eligibility and

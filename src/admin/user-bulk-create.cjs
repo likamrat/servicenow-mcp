@@ -357,7 +357,10 @@ function createUserBulkCreate({ source, state, principal, users, runOperation })
     });
     jobs.launch(accepted, "running", async () => {
       await execute(accepted);
-      state.record({ operation_id: accepted.batch_id, batch_id: accepted.batch_id, status: accepted.phase });
+      const settled = accepted.phase === "completed" || accepted.phase === "stopped" && jobs.stopRequested(accepted);
+      state.record({ operation_id: accepted.batch_id, batch_id: accepted.batch_id,
+        status: settled ? "confirmed" : accepted.phase, batch_phase: accepted.phase,
+        counts: status(accepted, { offset: 0, limit: 1 }).counts });
     }, "failed");
     return status(accepted);
   }

@@ -238,6 +238,10 @@ test("native bulk creation preserves five existing IDs and reaches explicit acti
   assert.equal(result.counts.created, 25);
   assert.equal(result.counts.corrected, 4);
   assert.equal(result.counts.already_matching, 1);
+  const journal = await f.admin.handle("local_operation_status", { operation_id: batch_id }, "caller-a");
+  assert.equal(journal.entries.at(-1).status, "confirmed");
+  assert.equal(journal.entries.at(-1).batch_phase, "completed");
+  assert.deepEqual(journal.entries.at(-1).counts, result.counts);
   assert.equal(f.rows.length, 30);
   assert.equal(f.writes().filter(row => row.method === "POST").length, 25);
   assert.ok(f.rows.every(row => row.active === "true" && row.locked_out === "false"));
@@ -297,6 +301,8 @@ test("a lost bulk create response stops remaining targets and survives restart w
   assert.equal(result.targets[0].evidence.failure.outcome.retained_created_identity, null);
   assert.equal(result.targets[0].evidence.failure.outcome.observed_user_identity, id("a"));
   assert.equal(f.writes().length, 1);
+  const journal = await f.admin.handle("local_operation_status", { operation_id: batch_id }, "caller-a");
+  assert.equal(journal.entries.at(-1).status, "uncertain");
   f.mode.lostResponse = false;
   const restarted = f.restart();
   const recovered = await restarted.handle("get_user_bulk_create", { batch_id }, "caller-a");
@@ -342,6 +348,10 @@ test("bulk status and cancellation remain responsive while a semantic create own
   assert.equal(f.rows[0].active, "false");
   assert.equal(f.rows[0].locked_out, "true");
   assert.equal(f.writes().length, 1);
+  const journal = await f.admin.handle("local_operation_status", { operation_id: batch_id }, "caller-a");
+  assert.equal(journal.entries.at(-1).status, "confirmed");
+  assert.equal(journal.entries.at(-1).batch_phase, "stopped");
+  assert.equal(journal.entries.at(-1).counts.stopped, 1);
 });
 
 test("lost or rejected user creation and unexpected lifecycle effects remain durable without replay or adoption", async t => {
