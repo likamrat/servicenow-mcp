@@ -130,8 +130,12 @@ legacy anonymous service. Keep the launcher under an owned process tree.
 
 Every `/mcp` request, including tool discovery and reads, requires a valid token.
 The public resource metadata is at `/.well-known/oauth-protected-resource/mcp`
-and `/.well-known/oauth-protected-resource`; the 401 challenge points to it.
-This server does not issue tokens or register clients.
+and `/.well-known/oauth-protected-resource`. A missing credential gets a
+discovery challenge; a rejected bearer token gets `401` with
+`error="invalid_token"` in `WWW-Authenticate`. Supported scopes are listed in
+metadata, not requested together in the challenge. The Cowork OAuth connection
+obtains and renews tokens; this server only validates them and does not register
+clients. A valid replacement token needs no server restart.
 
 ## 4. Connect Cowork and start with a read
 
@@ -155,9 +159,9 @@ optional capabilities, not prerequisites for an incident lookup.
 | Failure | Check |
 |---|---|
 | Startup rejects the binding/provider | File paths, approved hashes, provider export/result and the server account's access to its store. |
-| `401` or `invalid_token` | Token audience, tenant issuer, validity and access-token type; use the approved sign-in flow. |
+| `401` or `invalid_token` | Check token audience, tenant issuer, validity and access-token type. For repeated Connect prompts, check the saved OAuth refresh endpoint and `offline_access` scope, and verify whether the client attempted renewal while the tunnel stayed reachable. |
 | `delegated_management_scope_required` or `requester_not_authorized` | Delegated scopes, authorized client ID and caller identity. |
-| `authorization_keys_unavailable` | Server access to the tenant's signing-key endpoint; do not weaken token validation. |
+| `503 authorization_keys_unavailable` | Check server access to the tenant's signing-key endpoint and whether it returned usable keys. This is not a caller token rejection; do not weaken token validation. |
 | A tool is missing or scope is denied | The connector's granted scope. Incident permission does not include user/access tools. |
 | Writes disabled | The operator setting; do not enable it as a substitute for user authorization. |
 | ServiceNow rejects a call | The configured source account's credentials, record permissions or native rules. |

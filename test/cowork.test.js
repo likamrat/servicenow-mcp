@@ -85,6 +85,56 @@ test("the authenticated interface gates all ten tools and exposes only protected
   assert.throws(() => validateProfile({ ...profile, allowed_callers: [oid] }), /Unexpected/);
 });
 
+test("expired bearer requests signal token renewal without asking for additional scopes", async t => {
+  const { generateKeyPair, SignJWT } = await import("jose");
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  let now = 2000000000;
+  const sign = () => new SignJWT({ tid: tenant, oid, azp: client, ver: "2.0", scp: SCOPE })
+    .setProtectedHeader({ alg: "RS256" }).setIssuer(`https://login.microsoftonline.com/${tenant}/v2.0`)
+    .setAudience(audience).setIssuedAt(now).setNotBefore(now).setExpirationTime(now + 60).sign(privateKey);
+  const verifyAccessToken = await createEntraVerifier(profile, { key: publicKey, now: () => now * 1000 });
+  const server = createCoworkApp({ profile, verifyAccessToken, backend: { handle: async () => ({}) } }).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const rpc = (method, bearer) => fetch(`http://127.0.0.1:${server.address().port}/mcp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method }),
+  });
+  const challenge = 'Bearer resource_metadata="https://mcp.example.invalid/.well-known/oauth-protected-resource/mcp"';
+  const initial = await sign();
+  assert.equal((await rpc("initialize", initial)).status, 200);
+  now += 91;
+  const expired = await rpc("tools/list", initial);
+  assert.equal(expired.status, 401);
+  assert.deepEqual(await expired.json(), { error: "invalid_token" });
+  assert.equal(expired.headers.get("WWW-Authenticate"), `${challenge}, error="invalid_token"`);
+  const anonymous = await rpc("initialize");
+  assert.equal(anonymous.status, 401);
+  assert.equal(anonymous.headers.get("WWW-Authenticate"), challenge);
+  const renewed = await rpc("tools/list", await sign());
+  assert.equal(renewed.status, 200);
+  assert.equal(renewed.headers.get("WWW-Authenticate"), null);
+  assert.deepEqual((await renewed.json()).result.tools, tools.slice(0, 10));
+});
+
+test("an unreadable Entra signing-key response is not treated as an invalid caller token", async t => {
+  const { generateKeyPair, exportJWK, SignJWT } = await import("jose");
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const jwk = { ...await exportJWK(publicKey), kid: "test-key" };
+  let unavailable = true;
+  t.mock.method(globalThis, "fetch", async () => unavailable
+    ? new Response("<html>Unavailable</html>", { headers: { "Content-Type": "text/html" } })
+    : Response.json({ keys: [jwk] }));
+  const token = await new SignJWT({ tid: tenant, oid, azp: client, ver: "2.0", scp: SCOPE })
+    .setProtectedHeader({ alg: "RS256", kid: jwk.kid }).setIssuer(`https://login.microsoftonline.com/${tenant}/v2.0`)
+    .setAudience(audience).setIssuedAt().setNotBefore("0s").setExpirationTime("5m").sign(privateKey);
+  const verify = await createEntraVerifier(profile);
+  await assert.rejects(verify(token), { status: 503, code: "authorization_keys_unavailable" });
+  unavailable = false;
+  assert.equal((await verify(token)).object_id, oid);
+});
+
 test("opt-in tool audit logs only verified identity, catalog tool and bounded outcomes", async t => {
   const { generateKeyPair, SignJWT } = await import("jose");
   const { privateKey, publicKey } = await generateKeyPair("RS256");

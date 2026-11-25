@@ -14,7 +14,7 @@ async function createEntraVerifier(config, { key, now = Date.now } = {}) {
   const tenant = config.tenant_id, audience = config.audience, client = config.client_id;
   const issuer = `https://login.microsoftonline.com/${tenant}/v2.0`;
   const { jwtVerify, createRemoteJWKSet, customFetch } = await import("jose");
-  const verificationKey = key || createRemoteJWKSet(
+  const remoteKeys = key ? null : createRemoteJWKSet(
     new URL(`https://login.microsoftonline.com/${tenant}/discovery/v2.0/keys`),
     { timeoutDuration: 5000, cooldownDuration: 30000, cacheMaxAge: 600000,
       [customFetch]: async (url, options) => {
@@ -27,6 +27,14 @@ async function createEntraVerifier(config, { key, now = Date.now } = {}) {
         }
         return response;
       } });
+  const verificationKey = key || (async (...args) => {
+    try { return await remoteKeys(...args); }
+    catch (error) {
+      // jose wraps unreadable remote key responses in a generic error.
+      if (error.code === "ERR_JOSE_GENERIC") throw new CoworkAuthError(503, "authorization_keys_unavailable");
+      throw error;
+    }
+  });
   return async token => {
     if (typeof token !== "string" || token.length > 16384 ||
         !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token))

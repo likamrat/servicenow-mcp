@@ -70,6 +70,7 @@ function createCoworkApp({ profile, backend, verifyAccessToken,
   const fullScopes = MANAGEMENT_SCOPES.map(scope => `api://${profile.audience}/${scope}`);
   const metadataPath = "/.well-known/oauth-protected-resource/mcp";
   const metadataUrl = new URL(metadataPath, resource.origin).href;
+  const bearerChallenge = `Bearer resource_metadata="${metadataUrl}"`;
   app.get([metadataPath, "/.well-known/oauth-protected-resource"], (_req, res) => res.json({
     resource: resource.href, authorization_servers: [`https://login.microsoftonline.com/${profile.tenant_id}/v2.0`],
     scopes_supported: fullScopes, bearer_methods_supported: ["header"], resource_name: "ServiceNow records and users",
@@ -83,8 +84,8 @@ function createCoworkApp({ profile, backend, verifyAccessToken,
       next();
     } catch (error) {
       if (!(error instanceof CoworkAuthError)) return next(error);
-      if (error.status !== 503) res.set("WWW-Authenticate",
-        `Bearer resource_metadata="${metadataUrl}", scope="${fullScopes.join(" ")}"`);
+      if (error.status !== 503) res.set("WWW-Authenticate", error.code === "invalid_token"
+        ? `${bearerChallenge}, error="invalid_token"` : bearerChallenge);
       res.status(error.status).json({ error: error.code });
     }
   });
