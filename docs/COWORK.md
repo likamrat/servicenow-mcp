@@ -155,6 +155,46 @@ User creation/profile updates and access grants also need the relevant
 [reviewed source policies](OPERATIONS.md#reviewed-source-policies). Those are
 optional capabilities, not prerequisites for an incident lookup.
 
+### Switch between demo hosts
+
+If you only change the machine you present from, use the same Cowork app and
+leave its backend running. If each machine hosts its own backend, keep a
+distinct app ID, persistent HTTPS endpoint, and OAuth registration for each
+host. Give the apps distinct display names so you can tell which one Cowork
+selected. Keep the app ID and registration when updating that host's package.
+The same Microsoft 365 account can use each app; signing into one copy does
+not establish that another copy is connected.
+
+Before distributing an update, compare the package's `manifest.json`, the
+host's `cowork-profile.json`, and the saved values in **Teams Developer Portal
+> Tools > OAuth client registration**. Create a local JSON file with only
+these saved fields (use an empty string for a blank field):
+
+```json
+{
+  "referenceId": "<OAuth client registration ID>",
+  "baseUrl": "<Base URL>",
+  "clientId": "<Client ID>",
+  "scope": "<Scope>",
+  "tokenUrl": "<Token endpoint>",
+  "refreshUrl": "<Refresh endpoint>"
+}
+```
+
+Do not include a client secret or tokens. Pass one triplet per independently
+hosted deployment in a single command to also catch reused bindings. For example:
+
+```text
+npm run check:cowork-binding -- "<host A manifest.json>" "<host A absolute cowork-profile.json>" "<host A saved fields.json>" "<host B manifest.json>" "<host B absolute cowork-profile.json>" "<host B saved fields.json>"
+```
+
+This offline check does not look up the installed app, probe the tunnel, or
+prove that a token was refreshed. After a switch, run a read on the target app,
+then switch back and run the same read on the original app. **Connect** on a
+different app is not evidence that the original lost its connection. If
+**Connect** returns on the original app, verify its expected endpoint and
+tunnel availability separately from the renewal checks below.
+
 ## Diagnose and operate
 
 | Failure | Check |

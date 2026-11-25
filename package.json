@@ -11,6 +11,7 @@
     "start:stdio": "node src/stdio.cjs",
     "start:cowork": "node src/cowork-start.cjs",
     "contract:cowork": "node scripts/cowork-contract.cjs",
+    "check:cowork-binding": "node scripts/cowork-binding.cjs",
     "test": "node --test",
     "check": "node scripts/check.cjs",
     "notices:check": "node scripts/notices.cjs"
