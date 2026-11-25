@@ -100,17 +100,16 @@ the plugin does not grant those permissions.
 
 ### Update an installed plugin
 
-Version 2.0.0 replaces the MCP registration key `servicenow-portable` with
-`ServiceNow`, preserving the exact capitalization. Version 1.2.0 supplied
-`serverInfo.title`, but the Copilot app still displayed "Servicenow Portable"
-on tool invocations. The registration key is the supported manifest input for
-this correction; Agent Plugins 1.0 has no separate display-name field.
+If the installation uses the MCP registration key `servicenow-portable`, follow
+the steps below to migrate to `ServiceNow`, the key used since version 2.0.0.
+The manifest key sets the label for tool invocations; `serverInfo.title` alone
+does not set it.
 
 The plugin identity remains `servicenow-mcp@servicenow-community`, and the
 internal MCP protocol name remains `servicenow-mcp`. Keep the existing
 `PLUGIN_DATA` connection file, protected credential provider and external
-operation-history directory. No credential re-enrollment, state migration or
-hosted-backend restart is part of this naming update.
+operation-history directory. Changing the key does not require credential
+re-enrollment, state migration or a hosted-backend restart.
 
 1. Finish in-flight operations before updating. Preserve original operation
    IDs and inspect uncertain outcomes without replay. If an unresolved hold
@@ -130,11 +129,9 @@ hosted-backend restart is part of this naming update.
    links point to your instance. A manifest or handshake check alone does not
    establish this result.
 
-If a fresh invocation still shows the old label, wrong capitalization or
-duplicate registrations, stop the naming rollout and report the app version
-and observed label. Use supported connection/session refresh controls, not
-private host database or cache edits. Do not declare the naming fix complete
-until an actual updated invocation has the required prefix.
+If the label is wrong or both registrations appear, use the app's connection
+and session refresh controls. If the problem persists, report the app version
+and displayed label. Leave the app's private database and cache unchanged.
 
 Updating the plugin does not update a separately hosted Cowork backend. If they
 share an operation-history directory, follow the
@@ -142,11 +139,9 @@ share an operation-history directory, follow the
 before installing new account-policy fields. Changing the registration does
 not change those policies or the Cowork tool contract.
 
-Check the installed plugin version and loaded files separately from the remote
-release, and record the revision of any separately running backend. An available
-Update is not an installed update. Do not clear journals, remove holds or force
-a shared-runtime restart to align versions. The desktop app has its own update
-channel; a plugin release does not establish that the app itself is current.
+Check the desktop app version, installed plugin version and loaded files, and
+the revision of any separately hosted backend. Do not clear journals, remove
+holds or force a shared-runtime restart to align versions.
 
 ### Verify the loaded skills
 

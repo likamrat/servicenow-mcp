@@ -8,17 +8,16 @@ Native stdio clients have the full tool set. Authenticated Cowork exposes only
 the incident, user-profile and reviewed-access sections below, filtered by
 delegated scope.
 
-## Verified scope and deferred gaps
+## Operational limits
 
-| Area | Release status |
+| Area | Limit |
 |---|---|
-| Native bulk creation | Implemented and confirmed through real GitHub Copilot app jobs, including requested activation/unlock and per-target readback. This does not prove login readiness or every native side effect. |
-| Native bulk deletion | Implemented with synthetic coverage. A real assessment stopped with HTTP 403 before a plan or deletion; source ACL diagnosis and safe cleanup acceptance remain [backlog #1](https://github.com/likamrat/servicenow-mcp/issues/1). The 2.0.2 diagnostic improvement did not repair that denial. |
-| Complete user-account CRUD/lifecycle | Partial. The bounded operations below exist, but native-derived access changes can leave an uncertain operation with no supported resolution action. Completion and original-operation recovery remain [backlog #2](https://github.com/likamrat/servicenow-mcp/issues/2). |
+| Native bulk creation | A job can activate and unlock users and read back each target. Readback does not verify login readiness or every native side effect. |
+| Native bulk deletion | A source permission denial can prevent assessment from producing a plan. See [source access for bulk deletion](https://github.com/likamrat/servicenow-mcp/issues/1). |
+| User-account lifecycle | Native access changes can leave an uncertain operation that the tools cannot resolve. See [account lifecycle and operation recovery](https://github.com/likamrat/servicenow-mcp/issues/2). |
 
-These deferred items are not implemented by a documentation or plugin update.
-The advertised tool set, installed plugin and running shared backend are separate
-release facts; verify each before claiming an update is active.
+Verify the installed plugin, running backend and tool catalog separately when
+checking which operations a deployment supports.
 
 ## Incidents and changes
 

@@ -37,9 +37,10 @@ consent to only the delegated permissions it needs:
 | `User.Manage` | User lookup, schema, profile create/update, assessed deletion and recovery. |
 | `User.Access.Manage` | Reviewed access-policy inspection, assessment, apply and recovery. |
 
-Request scopes as `api://<resource-application-id>/<scope>` plus the client's
-required refresh scope. Adding a permission requires approved consent; installing
-server code does not expand existing consent.
+Request the API scopes as `api://<resource-application-id>/<scope>`. Include
+`offline_access` in the Entra request and set the OAuth registration's refresh
+endpoint to the Entra v2 token endpoint for silent renewal. Adding a permission
+requires approved consent.
 
 The connector must use `OAuthPluginVault`. Its `referenceId` is the Microsoft
 token-store registration ID, not an Entra application ID. Keep client secrets in
@@ -130,12 +131,12 @@ legacy anonymous service. Keep the launcher under an owned process tree.
 
 Every `/mcp` request, including tool discovery and reads, requires a valid token.
 The public resource metadata is at `/.well-known/oauth-protected-resource/mcp`
-and `/.well-known/oauth-protected-resource`. A missing credential gets a
-discovery challenge; a rejected bearer token gets `401` with
-`error="invalid_token"` in `WWW-Authenticate`. Supported scopes are listed in
-metadata, not requested together in the challenge. The Cowork OAuth connection
-obtains and renews tokens; this server only validates them and does not register
-clients. A valid replacement token needs no server restart.
+and `/.well-known/oauth-protected-resource`. The `WWW-Authenticate` challenge
+points to that metadata. An invalid bearer token gets a `401` challenge with
+`error="invalid_token"`. Use the metadata to discover
+supported scopes and the OAuth registration to choose which scopes to request.
+Cowork obtains and renews access tokens. The server validates each token
+independently, so Cowork can send a valid replacement without restarting it.
 
 ## 4. Connect Cowork and start with a read
 
@@ -159,12 +160,13 @@ optional capabilities, not prerequisites for an incident lookup.
 | Failure | Check |
 |---|---|
 | Startup rejects the binding/provider | File paths, approved hashes, provider export/result and the server account's access to its store. |
-| `401` or `invalid_token` | Check token audience, tenant issuer, validity and access-token type. For repeated Connect prompts, check the saved OAuth refresh endpoint and `offline_access` scope, and verify whether the client attempted renewal while the tunnel stayed reachable. |
+| `401 bearer_token_required` | Check whether Cowork sent a Bearer authorization header. The server received no usable bearer credential. |
+| `401 invalid_token` | Check the token's issuer, audience, type and expiry. If Cowork shows **Connect** again while the tunnel is reachable, check the saved refresh endpoint and `offline_access` request, then check whether the token store attempted and completed renewal. |
 | `delegated_management_scope_required` or `requester_not_authorized` | Delegated scopes, authorized client ID and caller identity. |
-| `503 authorization_keys_unavailable` | Check server access to the tenant's signing-key endpoint and whether it returned usable keys. This is not a caller token rejection; do not weaken token validation. |
+| `503 authorization_keys_unavailable` | Check whether the tenant's signing-key endpoint is reachable and returns usable keys. Keep token validation enabled. |
 | A tool is missing or scope is denied | The connector's granted scope. Incident permission does not include user/access tools. |
 | Writes disabled | The operator setting; do not enable it as a substitute for user authorization. |
-| ServiceNow rejects a call | The configured source account's credentials, record permissions or native rules. |
+| A tool reports a ServiceNow error | Check the source account's credentials, record permissions or native rules. A source error is separate from Cowork caller authentication. |
 
 To restart, stop incoming calls and let in-flight operations finish before
 stopping the owned process tree or reported HTTP PID. Preserve the history

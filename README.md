@@ -18,10 +18,9 @@ the direct stdio path for clients with protected environment configuration.
 For Cowork, an administrator must supply a matching OAuth connector and
 [host the authenticated backend](docs/COWORK.md).
 
-The plugin registers its MCP server as **ServiceNow**. Updating from 1.x changes
-the server identifier while retaining the plugin identity and saved connection.
-Follow the [update steps](docs/SETUP.md#update-an-installed-plugin) to review any
-new server approvals and verify the name on an actual tool invocation.
+The plugin registers its MCP server as **ServiceNow**. If your installation uses
+`servicenow-portable`, follow the [update steps](docs/SETUP.md#update-an-installed-plugin)
+to preserve the connection and review server approvals.
 
 ## Try it
 
@@ -67,7 +66,7 @@ supports read-only inspection; it does not resolve every uncertain write.
 
 ## Documentation
 
-- [Supported operations](docs/CAPABILITIES.md): available tasks, native verification and deferred gaps.
+- [Supported operations](docs/CAPABILITIES.md): available tools and their limits.
 - [Documentation index](docs/README.md): operator policies, recovery and development.
 
 ## Credits and license

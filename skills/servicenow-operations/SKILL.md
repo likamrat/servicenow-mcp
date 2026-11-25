@@ -68,11 +68,10 @@ boundary rather than claiming bulk support or silently changing execution paths.
 Read the referenced workflow for complete plan/effect review, bounded status
 pages, safe cancellation and original-ID recovery. A queued job is not success.
 
-Native bulk creation has completed real app jobs. Bulk deletion is implemented,
-but a real assessment stopped with a source 403 before a plan or deletion.
-Preserve that failure; tool availability and improved diagnostics do not repair
-the source ACL or establish cleanup readiness. Complete user-account lifecycle
-and original-operation recovery remain incomplete.
+If ServiceNow returns `403` during bulk deletion assessment, stop and report
+the source permission failure. Do not start deletion without a completed plan.
+Native access changes can leave uncertain lifecycle operations that the tools
+cannot resolve.
 
 When the connected interface exposes the semantic incident tools, use
 `get_incident_schema` for fields and `resolve_incident_assignee` for exact
